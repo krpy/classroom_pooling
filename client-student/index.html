@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Anketa</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0b1220;
+        --card: #111827;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --accent2: #a78bfa;
+        --danger: #f87171;
+        --ok: #4ade80;
+        --border: #1f2937;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100dvh;
+        padding: 16px;
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+      }
+      h1 {
+        font-size: 1.35rem;
+        margin: 0 0 12px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      label {
+        display: block;
+        font-size: 0.95rem;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        font-size: 1.25rem;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+      }
+      button {
+        width: 100%;
+        margin-top: 14px;
+        padding: 16px 18px;
+        font-size: 1.1rem;
+        border: none;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        color: #0b1220;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      .banner {
+        padding: 12px 14px;
+        border-radius: 12px;
+        font-size: 0.95rem;
+        margin-bottom: 12px;
+      }
+      .banner.err {
+        background: rgba(248, 113, 113, 0.12);
+        color: var(--danger);
+        border: 1px solid rgba(248, 113, 113, 0.35);
+      }
+      .banner.ok {
+        background: rgba(74, 222, 128, 0.12);
+        color: var(--ok);
+        border: 1px solid rgba(74, 222, 128, 0.35);
+      }
+      .q-title {
+        font-size: 1.1rem;
+        line-height: 1.45;
+        margin: 0 0 16px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .row:last-child {
+        border-bottom: none;
+      }
+      .row span {
+        flex: 1;
+        font-size: 1rem;
+      }
+      .pct {
+        width: 88px;
+        font-size: 1.1rem;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+        text-align: center;
+      }
+      .sum {
+        margin-top: 10px;
+        font-weight: 700;
+      }
+      .sum.bad {
+        color: var(--danger);
+      }
+      .sum.good {
+        color: var(--ok);
+      }
+      #rankList {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #rankList li {
+        padding: 16px 14px;
+        margin-bottom: 10px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        font-size: 1.05rem;
+        touch-action: none;
+        user-select: none;
+      }
+      #rankList li.sortable-ghost {
+        opacity: 0.45;
+      }
+      .mc-opt {
+        display: block;
+        margin: 10px 0;
+        padding: 16px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        font-size: 1.05rem;
+      }
+      .mc-opt input {
+        width: auto;
+        margin-right: 10px;
+        transform: scale(1.2);
+      }
+      .bar {
+        margin: 10px 0;
+      }
+      .bar .lab {
+        font-size: 0.9rem;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .bar .track {
+        height: 14px;
+        border-radius: 999px;
+        background: #0f172a;
+        overflow: hidden;
+        border: 1px solid var(--border);
+      }
+      .bar .fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+      }
+      .pie-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.98rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="app">
+      <div id="screen-pin">
+        <h1>Připojení</h1>
+        <p class="muted">Zadej čtyřmístný PIN od lektora.</p>
+        <label for="pinInput">PIN</label>
+        <input id="pinInput" type="text" inputmode="numeric" maxlength="4" autocomplete="one-time-code" />
+        <button type="button" id="btnJoin">Připojit se</button>
+      </div>
+      <div id="screen-wait" hidden>
+        <h1>Čekej na otázku…</h1>
+        <p class="muted">Jakmile lektor spustí otázku, zobrazí se ti tady.</p>
+      </div>
+      <div id="screen-q" hidden></div>
+      <div id="screen-sent" hidden>
+        <h1>Odpověď odeslána</h1>
+        <p class="muted">Čekej na výsledky.</p>
+      </div>
+      <div id="screen-results" hidden></div>
+      <div id="banner"></div>
+    </div>
+    <script>
+      (function () {
+        const TOKEN_KEY = "cp_student_token";
+        function studentToken() {
+          let t = localStorage.getItem(TOKEN_KEY);
+          if (!t) {
+            t = crypto.randomUUID();
+            localStorage.setItem(TOKEN_KEY, t);
+          }
+          return t;
+        }
+        const params = new URLSearchParams(location.search);
+        const initialPin = (params.get("pin") || "").replace(/\D/g, "").slice(0, 4);
+
+        const el = {
+          pin: document.getElementById("pinInput"),
+          btnJoin: document.getElementById("btnJoin"),
+          screenPin: document.getElementById("screen-pin"),
+          screenWait: document.getElementById("screen-wait"),
+          screenQ: document.getElementById("screen-q"),
+          screenSent: document.getElementById("screen-sent"),
+          screenResults: document.getElementById("screen-results"),
+          banner: document.getElementById("banner"),
+        };
+
+        if (initialPin.length === 4) el.pin.value = initialPin;
+
+        let ws = null;
+        let joined = false;
+        let currentQuestion = null;
+        let sortable = null;
+
+        function showBanner(text, kind) {
+          if (!text) {
+            el.banner.innerHTML = "";
+            el.banner.className = "";
+            return;
+          }
+          el.banner.innerHTML = '<div class="banner ' + (kind || "") + '">' + text + "</div>";
+        }
+
+        function setScreens(name) {
+          el.screenPin.hidden = name !== "pin";
+          el.screenWait.hidden = name !== "wait";
+          el.screenQ.hidden = name !== "q";
+          el.screenSent.hidden = name !== "sent";
+          el.screenResults.hidden = name !== "results";
+        }
+
+        function wsUrl() {
+          const p = location.protocol === "https:" ? "wss:" : "ws:";
+          return p + "//" + location.host + "/ws";
+        }
+
+        function connect(pin) {
+          if (ws) ws.close();
+          ws = new WebSocket(wsUrl());
+          ws.onopen = function () {
+            ws.send(
+              JSON.stringify({
+                type: "join",
+                pin: pin,
+                studentToken: studentToken(),
+              })
+            );
+          };
+          ws.onmessage = function (ev) {
+            var msg = JSON.parse(ev.data);
+            if (msg.type === "error") {
+              showBanner(msg.message || "Chyba", "err");
+              joined = false;
+              setScreens("pin");
+              return;
+            }
+            showBanner("");
+            if (msg.type === "waiting") {
+              joined = true;
+              currentQuestion = null;
+              destroySortable();
+              setScreens("wait");
+            }
+            if (msg.type === "question_activated") {
+              joined = true;
+              currentQuestion = msg.question;
+              renderQuestion(msg.question);
+              setScreens("q");
+            }
+            if (msg.type === "question_closed") {
+              currentQuestion = null;
+              destroySortable();
+              setScreens("wait");
+            }
+            if (msg.type === "show_results") {
+              destroySortable();
+              renderResults(msg.results);
+              setScreens("results");
+            }
+          };
+          ws.onclose = function () {
+            joined = false;
+          };
+        }
+
+        function destroySortable() {
+          if (sortable) {
+            sortable.destroy();
+            sortable = null;
+          }
+        }
+
+        function renderQuestion(q) {
+          el.screenQ.innerHTML = "";
+          var title = document.createElement("p");
+          title.className = "q-title";
+          title.textContent = q.text;
+          el.screenQ.appendChild(title);
+
+          if (q.type === "slider") {
+            var items = (q.options && q.options.items) || [];
+            var wrap = document.createElement("div");
+            var inputs = [];
+            items.forEach(function (label, i) {
+              var row = document.createElement("div");
+              row.className = "row";
+              var span = document.createElement("span");
+              span.textContent = label;
+              var inp = document.createElement("input");
+              inp.type = "number";
+              inp.min = "0";
+              inp.max = "100";
+              inp.step = "1";
+              inp.className = "pct";
+              inp.value = String(Math.round(100 / items.length));
+              inp.dataset.idx = String(i);
+              inputs.push(inp);
+              row.appendChild(span);
+              row.appendChild(inp);
+              wrap.appendChild(row);
+            });
+            var sumEl = document.createElement("div");
+            sumEl.className = "sum";
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = "Odeslat";
+            function recalc() {
+              var s = 0;
+              inputs.forEach(function (x) {
+                s += Number(x.value) || 0;
+              });
+              sumEl.textContent = "Součet: " + s + " % (musí být 100 %)";
+              sumEl.className = "sum " + (Math.abs(s - 100) < 0.51 ? "good" : "bad");
+              btn.disabled = Math.abs(s - 100) >= 0.51;
+            }
+            inputs.forEach(function (inp) {
+              inp.addEventListener("input", recalc);
+            });
+            el.screenQ.appendChild(wrap);
+            el.screenQ.appendChild(sumEl);
+            btn.addEventListener("click", function () {
+              var p = inputs.map(function (i) {
+                return Number(i.value) || 0;
+              });
+              ws.send(
+                JSON.stringify({
+                  type: "submit",
+                  questionId: q.id,
+                  studentToken: studentToken(),
+                  value: { percentages: p },
+                })
+              );
+              setScreens("sent");
+            });
+            el.screenQ.appendChild(btn);
+            recalc();
+            return;
+          }
+
+          if (q.type === "ranking") {
+            var items = (q.options && q.options.items) || [];
+            var ul = document.createElement("ul");
+            ul.id = "rankList";
+            items.forEach(function (text, idx) {
+              var li = document.createElement("li");
+              li.textContent = text;
+              li.dataset.id = String(idx);
+              ul.appendChild(li);
+            });
+            el.screenQ.appendChild(ul);
+            sortable = Sortable.create(ul, {
+              animation: 150,
+              handle: "li",
+            });
+            var btn2 = document.createElement("button");
+            btn2.type = "button";
+            btn2.textContent = "Odeslat pořadí";
+            btn2.addEventListener("click", function () {
+              var order = sortable.toArray().map(function (x) {
+                return Number(x);
+              });
+              ws.send(
+                JSON.stringify({
+                  type: "submit",
+                  questionId: q.id,
+                  studentToken: studentToken(),
+                  value: { order: order },
+                })
+              );
+              setScreens("sent");
+            });
+            el.screenQ.appendChild(btn2);
+            return;
+          }
+
+          if (q.type === "multiple_choice") {
+            var choices = (q.options && q.options.choices) || [];
+            var picked = 0;
+            var fieldset = document.createElement("div");
+            choices.forEach(function (c, idx) {
+              var lab = document.createElement("label");
+              lab.className = "mc-opt";
+              var radio = document.createElement("input");
+              radio.type = "radio";
+              radio.name = "mc";
+              radio.value = String(idx);
+              if (idx === 0) {
+                radio.checked = true;
+                picked = 0;
+              }
+              radio.addEventListener("change", function () {
+                picked = idx;
+              });
+              lab.appendChild(radio);
+              lab.appendChild(document.createTextNode(" " + c));
+              fieldset.appendChild(lab);
+            });
+            el.screenQ.appendChild(fieldset);
+            var btn3 = document.createElement("button");
+            btn3.type = "button";
+            btn3.textContent = "Odeslat odpověď";
+            btn3.addEventListener("click", function () {
+              var sel = fieldset.querySelector('input[name="mc"]:checked');
+              var choice = sel ? Number(sel.value) : 0;
+              ws.send(
+                JSON.stringify({
+                  type: "submit",
+                  questionId: q.id,
+                  studentToken: studentToken(),
+                  value: { choice: choice },
+                })
+              );
+              setScreens("sent");
+            });
+            el.screenQ.appendChild(btn3);
+          }
+        }
+
+        function renderResults(r) {
+          el.screenResults.innerHTML = "";
+          var h = document.createElement("h1");
+          h.textContent = "Výsledky";
+          el.screenResults.appendChild(h);
+
+          if (!r || r.kind === "unknown") {
+            el.screenResults.appendChild(document.createTextNode("Žádná data."));
+            return;
+          }
+
+          if (r.kind === "slider") {
+            r.labels.forEach(function (lab, i) {
+              var avg = r.averages[i] || 0;
+              var row = document.createElement("div");
+              row.className = "bar";
+              var l = document.createElement("div");
+              l.className = "lab";
+              l.textContent = lab + " — průměr " + avg + " %";
+              var track = document.createElement("div");
+              track.className = "track";
+              var fill = document.createElement("div");
+              fill.className = "fill";
+              fill.style.width = Math.min(100, avg) + "%";
+              track.appendChild(fill);
+              row.appendChild(l);
+              row.appendChild(track);
+              el.screenResults.appendChild(row);
+            });
+          } else if (r.kind === "ranking") {
+            (r.items || []).forEach(function (row) {
+              var d = document.createElement("div");
+              d.className = "pie-row";
+              d.textContent = row.label + " — prům. pořadí " + row.avgRank;
+              el.screenResults.appendChild(d);
+            });
+          } else if (r.kind === "multiple_choice") {
+            var total = r.counts.reduce(function (a, b) {
+              return a + b;
+            }, 0);
+            r.labels.forEach(function (lab, i) {
+              var cnt = r.counts[i] || 0;
+              var pct = total ? Math.round((cnt / total) * 100) : 0;
+              var row = document.createElement("div");
+              row.className = "bar";
+              var l = document.createElement("div");
+              l.className = "lab";
+              l.textContent = lab + " — " + cnt + " hlasů (" + pct + "%)";
+              var track = document.createElement("div");
+              track.className = "track";
+              var fill = document.createElement("div");
+              fill.className = "fill";
+              fill.style.width = pct + "%";
+              track.appendChild(fill);
+              row.appendChild(l);
+              row.appendChild(track);
+              el.screenResults.appendChild(row);
+            });
+          }
+          var foot = document.createElement("p");
+          foot.className = "muted";
+          foot.style.marginTop = "14px";
+          foot.textContent = "Počet odpovědí: " + (r.responseCount || 0);
+          el.screenResults.appendChild(foot);
+        }
+
+        el.btnJoin.addEventListener("click", function () {
+          var pin = (el.pin.value || "").replace(/\D/g, "").slice(0, 4);
+          if (pin.length !== 4) {
+            showBanner("Zadej platný čtyřmístný PIN.", "err");
+            return;
+          }
+          showBanner("Připojuji…", "ok");
+          connect(pin);
+        });
+      })();
+    </script>
+  </body>
+</html>

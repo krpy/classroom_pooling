@@ -1,0 +1,218 @@
+import { randomUUID } from "node:crypto";
+import { WebSocketServer } from "ws";
+import {
+  getSessionByCode,
+  getActiveQuestionForSession,
+  upsertResponse,
+  listResponsesForQuestion,
+  getQuestionByIdInSession,
+  getSessionForPresenter,
+} from "./db.js";
+import { computeResults, validateResponseValue } from "./aggregate.js";
+
+/** @typedef {{ ws: import('ws').WebSocket, role: 'student' | 'presenter', sessionId: number, studentToken?: string }} ClientMeta */
+
+/** @type {Map<string, ClientMeta>} */
+const clients = new Map();
+
+/** @type {import('ws').WebSocketServer | null} */
+let wss = null;
+
+export function setupWebSocket(server) {
+  wss = new WebSocketServer({ server, path: "/ws" });
+
+  wss.on("connection", (ws) => {
+    ws.on("message", (raw) => {
+      let msg;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        safeSend(ws, { type: "error", message: "Neplatná zpráva" });
+        return;
+      }
+      handleMessage(ws, msg);
+    });
+
+    ws.on("close", () => {
+      for (const [key, meta] of clients.entries()) {
+        if (meta.ws === ws) clients.delete(key);
+      }
+    });
+  });
+
+  return wss;
+}
+
+function safeSend(ws, obj) {
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+}
+
+function studentKey(sessionId, token) {
+  return `s:${sessionId}:${token}`;
+}
+
+function handleMessage(ws, msg) {
+  if (msg.type === "join") {
+    handleJoinStudent(ws, msg);
+    return;
+  }
+  if (msg.type === "join_presenter") {
+    handleJoinPresenter(ws, msg);
+    return;
+  }
+  if (msg.type === "submit") {
+    handleSubmit(ws, msg);
+    return;
+  }
+  safeSend(ws, { type: "error", message: "Neznámý typ zprávy" });
+}
+
+function handleJoinStudent(ws, msg) {
+  const pin = String(msg.pin || "").trim();
+  const studentToken = String(msg.studentToken || "").trim();
+  if (!/^\d{4}$/.test(pin) || !studentToken) {
+    safeSend(ws, { type: "error", message: "Chybí PIN nebo token" });
+    return;
+  }
+  const session = getSessionByCode(pin);
+  if (!session) {
+    safeSend(ws, { type: "error", message: "Neplatný PIN nebo relace je ukončena" });
+    return;
+  }
+  const sessionId = session.id;
+  clients.set(studentKey(sessionId, studentToken), {
+    ws,
+    role: "student",
+    sessionId,
+    studentToken,
+  });
+
+  const active = getActiveQuestionForSession(sessionId);
+  if (active) {
+    safeSend(ws, {
+      type: "question_activated",
+      question: publicQuestion(active),
+    });
+  } else {
+    safeSend(ws, { type: "waiting" });
+  }
+}
+
+function handleJoinPresenter(ws, msg) {
+  const sessionId = Number(msg.sessionId);
+  const adminToken = String(msg.adminToken || "");
+  if (!sessionId || !adminToken) {
+    safeSend(ws, { type: "error", message: "Chybí relace" });
+    return;
+  }
+  const bundle = getSessionForPresenter(sessionId, adminToken);
+  if (!bundle) {
+    safeSend(ws, { type: "error", message: "Neplatný přístup lektora" });
+    return;
+  }
+  clients.set(`p:${sessionId}:${randomUUID()}`, { ws, role: "presenter", sessionId });
+  safeSend(ws, { type: "presenter_ready", sessionId });
+}
+
+function findStudentMeta(ws) {
+  for (const meta of clients.values()) {
+    if (meta.role === "student" && meta.ws === ws) return meta;
+  }
+  return null;
+}
+
+function handleSubmit(ws, msg) {
+  const meta = findStudentMeta(ws);
+  if (!meta || !meta.studentToken) {
+    safeSend(ws, { type: "error", message: "Nejdřív se připoj (join)" });
+    return;
+  }
+  const questionId = Number(msg.questionId);
+  const studentToken = String(msg.studentToken || "");
+  if (studentToken !== meta.studentToken) {
+    safeSend(ws, { type: "error", message: "Token neodpovídá připojení" });
+    return;
+  }
+  const value = msg.value;
+  if (value === undefined || typeof value !== "object") {
+    safeSend(ws, { type: "error", message: "Chybí odpověď" });
+    return;
+  }
+
+  const question = getQuestionByIdInSession(questionId, meta.sessionId);
+  if (!question || question.status !== "active") {
+    safeSend(ws, { type: "error", message: "Otázka není aktivní" });
+    return;
+  }
+  if (!validateResponseValue(question, value)) {
+    safeSend(ws, { type: "error", message: "Neplatný formát odpovědi" });
+    return;
+  }
+
+  upsertResponse(questionId, studentToken, value);
+
+  const rows = listResponsesForQuestion(questionId);
+  const results = computeResults(question, rows);
+  broadcastToPresenters(meta.sessionId, {
+    type: "response_received",
+    questionId,
+    results,
+  });
+}
+
+function publicQuestion(q) {
+  return {
+    id: q.id,
+    type: q.type,
+    text: q.text,
+    options: q.options,
+    order_index: q.order_index,
+    status: q.status,
+  };
+}
+
+export function broadcastQuestionActivated(sessionId, question) {
+  const payload = { type: "question_activated", question: publicQuestion(question) };
+  for (const [key, meta] of clients.entries()) {
+    if (key.startsWith(`s:${sessionId}:`)) safeSend(meta.ws, payload);
+  }
+}
+
+export function broadcastQuestionClosed(sessionId) {
+  const payload = { type: "question_closed" };
+  for (const [key, meta] of clients.entries()) {
+    if (key.startsWith(`s:${sessionId}:`)) safeSend(meta.ws, payload);
+  }
+}
+
+export function broadcastWaiting(sessionId) {
+  const payload = { type: "waiting" };
+  for (const [key, meta] of clients.entries()) {
+    if (key.startsWith(`s:${sessionId}:`)) safeSend(meta.ws, payload);
+  }
+}
+
+export function broadcastShowResults(sessionId, results) {
+  const payload = { type: "show_results", results };
+  for (const [key, meta] of clients.entries()) {
+    if (key.startsWith(`s:${sessionId}:`)) safeSend(meta.ws, payload);
+  }
+}
+
+function broadcastToPresenters(sessionId, payload) {
+  for (const meta of clients.values()) {
+    if (meta.role === "presenter" && meta.sessionId === sessionId) {
+      safeSend(meta.ws, payload);
+    }
+  }
+}
+
+export function notifyPresenterResponse(sessionId, questionId, question) {
+  const rows = listResponsesForQuestion(questionId);
+  const results = computeResults(question, rows);
+  broadcastToPresenters(sessionId, {
+    type: "response_received",
+    questionId,
+    results,
+  });
+}

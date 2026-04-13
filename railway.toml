@@ -1,0 +1,6 @@
+[build]
+# Vite + React jsou v devDependencies — bez --include=dev by build na Railway často spadl.
+buildCommand = "npm install --include=dev && npm run build"
+
+[deploy]
+startCommand = "npm start"
