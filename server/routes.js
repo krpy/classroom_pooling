@@ -12,6 +12,7 @@ import {
   setStudentViewMode,
   getActiveQuestionForSession,
   listStudentQuestions,
+  createAdhocQuestion,
 } from "./db.js";
 import { computeResults } from "./aggregate.js";
 import {
@@ -24,11 +25,30 @@ import {
   broadcastReadingActivated,
 } from "./websocket.js";
 import { getDefaultReading } from "./reading.js";
+import { AiClientError, analyzeWithClaude } from "./ai.js";
+
+const ANALYZE_RATE_WINDOW_MS = 60_000;
+const ANALYZE_RATE_MAX = 6;
+const analyzeRate = new Map();
 
 function adminTokenFromReq(req) {
   const h = req.headers.authorization;
   if (h && h.startsWith("Bearer ")) return h.slice(7);
   return String(req.headers["x-admin-token"] || "");
+}
+
+function checkAnalyzeRateLimit(sessionId, adminToken) {
+  const key = `${sessionId}:${adminToken}`;
+  const now = Date.now();
+  const prev = analyzeRate.get(key);
+  if (!prev || now - prev.windowStart >= ANALYZE_RATE_WINDOW_MS) {
+    analyzeRate.set(key, { windowStart: now, count: 1 });
+    return true;
+  }
+  if (prev.count >= ANALYZE_RATE_MAX) return false;
+  prev.count += 1;
+  analyzeRate.set(key, prev);
+  return true;
 }
 
 export function createRouter() {
@@ -145,6 +165,48 @@ export function createRouter() {
     res.json({ ok: true, mode: "waiting" });
   });
 
+  router.post("/api/sessions/:sessionId/questions/adhoc", (req, res) => {
+    const sessionId = Number(req.params.sessionId);
+    const adminToken = adminTokenFromReq(req);
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const choicesFromText =
+      typeof body.choicesText === "string"
+        ? body.choicesText.split(/\r?\n/)
+        : Array.isArray(body.choices)
+          ? body.choices
+          : [];
+
+    const q = createAdhocQuestion(sessionId, adminToken, {
+      mode: body.mode,
+      text: body.text,
+      min: body.min,
+      max: body.max,
+      choices: choicesFromText,
+    });
+    if (!q) {
+      res.status(400).json({
+        error:
+          "Nelze vytvo\u0159it ot\u00e1zku. Zkontroluj zad\u00e1n\u00ed (text 1\u2013500 znak\u016f, ANO/NE, rozsah \u010d\u00edsla, 2\u201312 mo\u017enost\u00ed).",
+      });
+      return;
+    }
+
+    if (body.activate) {
+      const activated = activateQuestion(sessionId, q.id, adminToken);
+      if (activated) {
+        const active = getQuestion(sessionId, q.id, adminToken);
+        broadcastQuestionActivated(sessionId, active);
+        const rows = listResponsesForQuestion(q.id);
+        const results = computeResults(active, rows);
+        notifyPresenterResponse(sessionId, q.id, active);
+        notifyPresenterProgress(sessionId, q.id);
+        res.json({ ok: true, question: active, results, activated: true });
+        return;
+      }
+    }
+    res.json({ ok: true, question: q, activated: false });
+  });
+
   router.post("/api/sessions/:sessionId/questions/:questionId/activate", (req, res) => {
     const sessionId = Number(req.params.sessionId);
     const questionId = Number(req.params.questionId);
@@ -197,12 +259,12 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const questionId = Number(req.body?.questionId);
     if (!questionId) {
-      res.status(400).json({ error: "Chyb? questionId" });
+      res.status(400).json({ error: "Chyb\u00ed questionId" });
       return;
     }
     const q = getQuestion(sessionId, questionId, adminToken);
     if (!q) {
-      res.status(404).json({ error: "Ot?zka nenalezena" });
+      res.status(404).json({ error: "Ot\u00e1zka nenalezena" });
       return;
     }
     const modeSet = setStudentViewMode(sessionId, adminToken, "results", { questionId });
@@ -214,6 +276,44 @@ export function createRouter() {
     const results = computeResults(q, rows);
     broadcastShowResults(sessionId, results);
     res.json({ ok: true, results });
+  });
+
+  router.post("/api/sessions/:sessionId/analyze", async (req, res) => {
+    const sessionId = Number(req.params.sessionId);
+    const adminToken = adminTokenFromReq(req);
+    const questionId = Number(req.body?.questionId);
+    const instruction = typeof req.body?.instruction === "string" ? req.body.instruction.trim() : "";
+
+    if (!questionId) {
+      res.status(400).json({ error: "Chyb\u00ed questionId" });
+      return;
+    }
+    if (instruction.length > 2000) {
+      res.status(400).json({ error: "Dopl\u0148kov\u00fd pokyn je p\u0159\u00edli\u0161 dlouh\u00fd (max 2000 znak\u016f)." });
+      return;
+    }
+    if (!checkAnalyzeRateLimit(sessionId, adminToken)) {
+      res.status(429).json({ error: "Limit AI anal\u00fdz vy\u010derp\u00e1n, zkus to pros\u00edm za minutu." });
+      return;
+    }
+
+    const q = getQuestion(sessionId, questionId, adminToken);
+    if (!q) {
+      res.status(404).json({ error: "Ot\u00e1zka nenalezena" });
+      return;
+    }
+    const rows = listResponsesForQuestion(questionId);
+
+    try {
+      const analysis = await analyzeWithClaude(q, rows, instruction);
+      res.json({ ok: true, analysis });
+    } catch (error) {
+      if (error instanceof AiClientError) {
+        res.status(error.status || 500).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: "AI anal\u00fdza selhala." });
+    }
   });
 
   router.post("/api/sessions/:sessionId/close-session", (req, res) => {

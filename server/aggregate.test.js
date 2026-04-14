@@ -74,3 +74,34 @@ test("multiple choice counts", () => {
   assert.deepEqual(r.counts, [2, 1]);
   assert.equal(r.responseCount, 3);
 });
+
+const numQ = {
+  id: 4,
+  type: "number_guess",
+  options: { min: 1, max: 10 },
+};
+
+test("number_guess aggregate buckets and average", () => {
+  const rows = [
+    { student_token: "a", value: { guess: 3 } },
+    { student_token: "b", value: { guess: 7 } },
+    { student_token: "c", value: { guess: 3 } },
+  ];
+  const r = computeResults(numQ, rows);
+  assert.equal(r.kind, "number_guess");
+  assert.equal(r.responseCount, 3);
+  assert.equal(r.average, 4.3);
+  assert.deepEqual(
+    r.buckets.map((b) => [b.value, b.count]),
+    [
+      [3, 2],
+      [7, 1],
+    ]
+  );
+});
+
+test("number_guess validation range", () => {
+  assert.equal(validateResponseValue(numQ, { guess: 5 }), true);
+  assert.equal(validateResponseValue(numQ, { guess: 0 }), false);
+  assert.equal(validateResponseValue(numQ, { guess: 11 }), false);
+});

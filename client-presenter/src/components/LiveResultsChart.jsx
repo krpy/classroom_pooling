@@ -93,6 +93,34 @@ export default function LiveResultsChart({ results }) {
     );
   }
 
+  if (results.kind === "number_guess") {
+    const data = (results.buckets || []).map((b) => ({
+      name: String(b.value),
+      Počet: b.count,
+    }));
+    return (
+      <div style={{ width: "100%", height: 360 }}>
+        <p style={{ marginTop: 0, color: "#64748b", fontSize: 14 }}>
+          Rozsah: {results.min}–{results.max}
+          {results.average != null ? ` · průměr: ${results.average}` : ""}
+        </p>
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 24 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" name="Hodnota" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="Počet" name="Počet" fill="#7c3aed" />
+          </BarChart>
+        </ResponsiveContainer>
+        <p style={{ color: "#64748b", fontSize: 14 }}>
+          Počet odpovědí: {results.responseCount}
+        </p>
+      </div>
+    );
+  }
+
   if (results.kind === "multiple_choice") {
     const data = results.labels.map((name, i) => ({
       name,

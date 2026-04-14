@@ -89,6 +89,35 @@ export function computeResults(question, responses) {
     };
   }
 
+  if (question.type === "number_guess") {
+    const min = Number(question.options.min);
+    const max = Number(question.options.max);
+    const countsMap = new Map();
+    let validCount = 0;
+    let sum = 0;
+    for (const r of responses) {
+      const g = r.value?.guess;
+      if (!Number.isFinite(g)) continue;
+      const gi = Math.trunc(Number(g));
+      if (gi < min || gi > max) continue;
+      validCount += 1;
+      sum += gi;
+      countsMap.set(gi, (countsMap.get(gi) || 0) + 1);
+    }
+    const entries = [...countsMap.entries()].sort((a, b) => a[0] - b[0]);
+    const buckets = entries.map(([value, count]) => ({ value, count }));
+    return {
+      kind: "number_guess",
+      questionId: question.id,
+      min,
+      max,
+      buckets,
+      average: validCount ? Math.round((sum / validCount) * 10) / 10 : null,
+      responseCount: validCount,
+    };
+  }
+
+  const n = responses.length;
   return { kind: "unknown", questionId: question.id, responseCount: n };
 }
 
@@ -122,6 +151,14 @@ export function validateResponseValue(question, value) {
     const choices = question.options.choices || [];
     const c = value?.choice;
     return typeof c === "number" && c >= 0 && c < choices.length;
+  }
+  if (question.type === "number_guess") {
+    const min = Number(question.options.min);
+    const max = Number(question.options.max);
+    const g = value?.guess;
+    if (!Number.isFinite(g)) return false;
+    const gi = Math.trunc(Number(g));
+    return gi >= min && gi <= max;
   }
   return false;
 }

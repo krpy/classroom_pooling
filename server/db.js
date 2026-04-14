@@ -52,7 +52,7 @@ function migrate(database) {
     CREATE TABLE IF NOT EXISTS questions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      type TEXT NOT NULL CHECK (type IN ('slider', 'ranking', 'multiple_choice')),
+      type TEXT NOT NULL CHECK (type IN ('slider', 'ranking', 'multiple_choice', 'number_guess')),
       text TEXT NOT NULL,
       options TEXT NOT NULL,
       order_index INTEGER NOT NULL,
@@ -84,7 +84,43 @@ function migrate(database) {
 
   ensureColumn(database, "sessions", "student_view_mode", "TEXT NOT NULL DEFAULT 'waiting'");
   ensureColumn(database, "sessions", "student_view_data", "TEXT");
+  migrateQuestionsAllowNumberGuess(database);
   normalizeMojibakeQuestions(database);
+}
+
+/** Existing DBs created before number_guess need table rebuild (SQLite cannot ALTER CHECK). */
+function migrateQuestionsAllowNumberGuess(database) {
+  const row = database
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='questions'`)
+    .get();
+  if (!row || !row.sql || row.sql.includes("number_guess")) return;
+
+  database.exec("PRAGMA foreign_keys=OFF;");
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    database.exec(`
+      CREATE TABLE questions__mig (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('slider', 'ranking', 'multiple_choice', 'number_guess')),
+        text TEXT NOT NULL,
+        options TEXT NOT NULL,
+        order_index INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('hidden', 'active', 'closed')),
+        UNIQUE (session_id, order_index)
+      );
+    `);
+    database.exec(`INSERT INTO questions__mig SELECT * FROM questions;`);
+    database.exec(`DROP TABLE questions;`);
+    database.exec(`ALTER TABLE questions__mig RENAME TO questions;`);
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_questions_session ON questions(session_id);`);
+    database.exec("COMMIT;");
+  } catch (e) {
+    database.exec("ROLLBACK;");
+    throw e;
+  } finally {
+    database.exec("PRAGMA foreign_keys=ON;");
+  }
 }
 
 function normalizeMojibakeQuestions(database) {
@@ -154,6 +190,67 @@ const HARDCODED_QUESTIONS = [
     order_index: 2,
   },
 ];
+
+/**
+ * @param {number} sessionId
+ * @param {string} adminToken
+ * @param {{ mode: 'yes_no' | 'number' | 'choice', text: string, min?: number, max?: number, choices?: string[] }} spec
+ * @returns {ReturnType<typeof parseQuestionRow> | null}
+ */
+export function createAdhocQuestion(sessionId, adminToken, spec) {
+  const database = getDb();
+  const sessionOk = database
+    .prepare(`SELECT 1 FROM sessions WHERE id = ? AND admin_token = ?`)
+    .get(sessionId, adminToken);
+  if (!sessionOk) return null;
+
+  const maxRow = database
+    .prepare(`SELECT MAX(order_index) AS m FROM questions WHERE session_id = ?`)
+    .get(sessionId);
+  const nextOrder = Number(maxRow?.m ?? -1) + 1;
+
+  let type;
+  /** @type {Record<string, unknown>} */
+  let options;
+
+  if (spec.mode === "yes_no") {
+    type = "multiple_choice";
+    options = { choices: ["Ano", "Ne"], yesNoLayout: true };
+  } else if (spec.mode === "choice") {
+    const raw = Array.isArray(spec.choices) ? spec.choices : [];
+    const choices = raw.map((s) => String(s).trim()).filter(Boolean);
+    if (choices.length < 2 || choices.length > 12) return null;
+    const seen = new Set();
+    for (const c of choices) {
+      if (seen.has(c)) return null;
+      seen.add(c);
+    }
+    type = "multiple_choice";
+    options = { choices };
+  } else if (spec.mode === "number") {
+    const min = Math.trunc(Number(spec.min));
+    const max = Math.trunc(Number(spec.max));
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return null;
+    if (max - min > 10_000) return null;
+    type = "number_guess";
+    options = { min, max };
+  } else {
+    return null;
+  }
+
+  const text = String(spec.text || "").trim();
+  if (!text || text.length > 500) return null;
+
+  const info = database
+    .prepare(
+      `INSERT INTO questions (session_id, type, text, options, order_index, status)
+       VALUES (?, ?, ?, ?, ?, 'hidden')`
+    )
+    .run(sessionId, type, text, JSON.stringify(options), nextOrder);
+
+  const id = Number(info.lastInsertRowid);
+  return getQuestion(sessionId, id, adminToken);
+}
 
 export function createSession() {
   const database = getDb();

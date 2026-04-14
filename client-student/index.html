@@ -241,6 +241,15 @@
       #askBtn {
         margin-top: 10px;
       }
+      .yn-row {
+        display: flex;
+        gap: 12px;
+        margin-top: 8px;
+      }
+      .yn-row button {
+        flex: 1;
+        margin-top: 0;
+      }
     </style>
   </head>
   <body>
@@ -590,8 +599,79 @@
             return;
           }
 
+          if (q.type === "number_guess") {
+            var nMin = Number((q.options && q.options.min) ?? 0);
+            var nMax = Number((q.options && q.options.max) ?? 100);
+            var inpN = document.createElement("input");
+            inpN.type = "number";
+            inpN.min = String(nMin);
+            inpN.max = String(nMax);
+            inpN.step = "1";
+            inpN.className = "pct";
+            inpN.style.width = "100%";
+            inpN.style.marginTop = "8px";
+            inpN.value = String(Math.min(nMax, Math.max(nMin, Math.round((nMin + nMax) / 2))));
+            var hintN = document.createElement("p");
+            hintN.className = "muted";
+            hintN.textContent = "Zadej celé číslo od " + nMin + " do " + nMax + ".";
+            el.screenQ.appendChild(hintN);
+            el.screenQ.appendChild(inpN);
+            var btnN = document.createElement("button");
+            btnN.type = "button";
+            btnN.textContent = "Odeslat tip";
+            btnN.addEventListener("click", function () {
+              var g = Math.trunc(Number(inpN.value));
+              if (
+                safeWsSend({
+                  type: "submit",
+                  questionId: q.id,
+                  studentToken: studentToken(),
+                  value: { guess: g },
+                })
+              ) {
+                setScreens("sent");
+              }
+            });
+            el.screenQ.appendChild(btnN);
+            return;
+          }
+
           if (q.type === "multiple_choice") {
             var choices = (q.options && q.options.choices) || [];
+            var yesNo = q.options && q.options.yesNoLayout === true;
+            if (yesNo && choices.length === 2) {
+              var rowYn = document.createElement("div");
+              rowYn.className = "yn-row";
+              var sendChoice = function (idx) {
+                if (
+                  safeWsSend({
+                    type: "submit",
+                    questionId: q.id,
+                    studentToken: studentToken(),
+                    value: { choice: idx },
+                  })
+                ) {
+                  setScreens("sent");
+                }
+              };
+              var b0 = document.createElement("button");
+              b0.type = "button";
+              b0.textContent = choices[0];
+              b0.addEventListener("click", function () {
+                sendChoice(0);
+              });
+              var b1 = document.createElement("button");
+              b1.type = "button";
+              b1.textContent = choices[1];
+              b1.addEventListener("click", function () {
+                sendChoice(1);
+              });
+              rowYn.appendChild(b0);
+              rowYn.appendChild(b1);
+              el.screenQ.appendChild(rowYn);
+              return;
+            }
+
             var picked = 0;
             var fieldset = document.createElement("div");
             choices.forEach(function (c, idx) {
@@ -670,6 +750,19 @@
               d.textContent = row.label + " — prům. pořadí " + row.avgRank;
               el.screenResults.appendChild(d);
             });
+          } else if (r.kind === "number_guess") {
+            (r.buckets || []).forEach(function (b) {
+              var row = document.createElement("div");
+              row.className = "pie-row";
+              row.textContent = "Hodnota " + b.value + ": " + b.count + "×";
+              el.screenResults.appendChild(row);
+            });
+            if (r.average != null) {
+              var av = document.createElement("p");
+              av.className = "muted";
+              av.textContent = "Průměr: " + r.average;
+              el.screenResults.appendChild(av);
+            }
           } else if (r.kind === "multiple_choice") {
             var total = r.counts.reduce(function (a, b) {
               return a + b;

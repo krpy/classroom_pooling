@@ -8,6 +8,12 @@ function apiHeaders(adminToken) {
   };
 }
 
+const BLANK_QUICK_SLOTS = [
+  { id: "q1", label: "Ot?zka 1", text: "" },
+  { id: "q2", label: "Ot?zka 2", text: "" },
+  { id: "q3", label: "Ot?zka 3", text: "" },
+];
+
 export default function App() {
   const [sessionId, setSessionId] = useState(null);
   const [adminToken, setAdminToken] = useState(null);
@@ -23,6 +29,17 @@ export default function App() {
   const [progress, setProgress] = useState(null);
   const [reading, setReading] = useState(null);
   const [error, setError] = useState(null);
+  const [adhocMode, setAdhocMode] = useState("yes_no");
+  const [adhocText, setAdhocText] = useState("");
+  const [adhocMin, setAdhocMin] = useState("0");
+  const [adhocMax, setAdhocMax] = useState("100");
+  const [adhocChoices, setAdhocChoices] = useState("");
+  const [adhocActivate, setAdhocActivate] = useState(true);
+  const [adhocBusy, setAdhocBusy] = useState(false);
+  const [quickSlots, setQuickSlots] = useState(BLANK_QUICK_SLOTS);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisInstruction, setAnalysisInstruction] = useState("");
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   const wsUrl = useMemo(() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -89,6 +106,10 @@ export default function App() {
     return () => ws.close();
   }, [sessionId, adminToken, wsUrl]);
 
+  useEffect(() => {
+    setAnalysisResult(null);
+  }, [selectedResultQuestionId]);
+
   const createSession = async () => {
     setError(null);
     try {
@@ -148,7 +169,7 @@ export default function App() {
         method: "POST",
         headers: apiHeaders(adminToken),
       });
-      if (!res.ok) throw new Error("Reset ot?zky selhal");
+      if (!res.ok) throw new Error("Reset ot\u00e1zky selhal");
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -202,13 +223,87 @@ export default function App() {
 
   const selectedResultQuestion = questions.find((q) => q.id === selectedResultQuestionId) || null;
 
+  const createAdhocQuick = async () => {
+    if (!sessionId || !adminToken) return;
+    setAdhocBusy(true);
+    setError(null);
+    try {
+      const body = {
+        mode: adhocMode,
+        text: adhocText.trim(),
+        activate: adhocActivate,
+      };
+      if (adhocMode === "number") {
+        body.min = Number(adhocMin);
+        body.max = Number(adhocMax);
+      }
+      if (adhocMode === "choice") {
+        body.choicesText = adhocChoices;
+      }
+      const res = await fetch(`/api/sessions/${sessionId}/questions/adhoc`, {
+        method: "POST",
+        headers: apiHeaders(adminToken),
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Rychl\u00e1 ot\u00e1zka se nepoda\u0159ila");
+      }
+      await loadSession(sessionId, adminToken);
+      if (data.results) setLiveResults(data.results);
+      if (data.question?.id && data.activated) {
+        setActiveId(data.question.id);
+        setSelectedResultQuestionId(data.question.id);
+      }
+      setAdhocText("");
+      setAdhocChoices("");
+    } catch (e) {
+      setError(e.message || "Chyba");
+    } finally {
+      setAdhocBusy(false);
+    }
+  };
+
+  const updateQuickSlot = (slotId, text) => {
+    setQuickSlots((prev) => prev.map((s) => (s.id === slotId ? { ...s, text } : s)));
+  };
+
+  const loadQuickSlotToForm = (slotText) => {
+    setAdhocText(slotText);
+  };
+
+  const runClaudeAnalysis = async () => {
+    if (!sessionId || !adminToken || !selectedResultQuestion?.id) return;
+    setAnalysisBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/analyze`, {
+        method: "POST",
+        headers: apiHeaders(adminToken),
+        body: JSON.stringify({
+          questionId: selectedResultQuestion.id,
+          instruction: analysisInstruction.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "AI anal\u00fdza selhala");
+      }
+      setAnalysisResult(data.analysis || null);
+    } catch (e) {
+      setError(e.message || "Chyba");
+    } finally {
+      setAnalysisBusy(false);
+    }
+  };
+
   return (
     <div style={styles.page}>
       <header style={styles.header}>
-        <h1 style={styles.h1}>T\u0159\u00eddn\u00ed anketa - lektor</h1>
+        <h1 style={styles.h1}>{"T\u0159\u00eddn\u00ed anketa \u2013 lektor"}</h1>
         {!sessionId && (
           <button type="button" style={styles.primary} onClick={createSession}>
-            Vytvo\u0159it relaci
+            {"Vytvo\u0159it relaci"}
           </button>
         )}
       </header>
@@ -220,19 +315,145 @@ export default function App() {
           <div style={styles.pin}>{code}</div>
           {qr?.dataUrl && (
             <div style={styles.qrWrap}>
-              <img src={qr.dataUrl} alt="QR k\u00f3d pro p\u0159ipojen\u00ed" width={280} height={280} />
+              <img src={qr.dataUrl} alt={"QR k\u00f3d pro p\u0159ipojen\u00ed"} width={280} height={280} />
               <p style={styles.muted}>{qr.url}</p>
             </div>
           )}
           <div style={styles.row}>
             <button type="button" style={styles.secondary} onClick={showReading}>
-              Pustit reading student\u016fm
+              {"Pustit reading student\u016fm"}
             </button>
             <button type="button" style={styles.secondary} onClick={showQuestionMode}>
-              Zp\u011bt na ot\u00e1zku / \u010dek\u00e1n\u00ed
+              {"Zp\u011bt na ot\u00e1zku / \u010dek\u00e1n\u00ed"}
             </button>
           </div>
-          <p style={styles.muted}>Aktu\u00e1ln\u00ed studentsk\u00fd re\u017eim: {studentView.mode}</p>
+          <p style={styles.muted}>
+            {"Aktu\u00e1ln\u00ed studentsk\u00fd re\u017eim: "}
+            {studentView.mode}
+          </p>
+        </section>
+      )}
+
+      {sessionId && adminToken && (
+        <section style={styles.card}>
+          <h2 style={styles.h2}>{"Rychl\u00e1 ot\u00e1zka (ad hoc)"}</h2>
+          <p style={styles.muted}>
+            {
+              "Vytvo\u0159\u00ed novou ot\u00e1zku v relaci: ANO/NE, tip na \u010d\u00edslo v rozsahu, nebo v\u00fdb\u011br z vlastn\u00edch mo\u017enost\u00ed (2\u201312 \u0159\u00e1dk\u016f). Objev\u00ed se v seznamu spole\u010dn\u011b s p\u0159edp\u0159ipraven\u00fdmi ot\u00e1zkami."
+            }
+          </p>
+          <div style={styles.quickSlotWrap}>
+            <p style={{ ...styles.muted, margin: "4px 0 8px" }}>
+              {"P\u0159edp\u0159ipraven\u00e9 blank ot\u00e1zky (3 sloty):"}
+            </p>
+            {quickSlots.map((slot) => (
+              <div key={slot.id} style={styles.quickSlotRow}>
+                <label style={styles.quickSlotLabel}>{slot.label}</label>
+                <textarea
+                  style={{ ...styles.textarea, minHeight: 56 }}
+                  rows={2}
+                  maxLength={500}
+                  value={slot.text}
+                  onChange={(e) => updateQuickSlot(slot.id, e.target.value)}
+                  placeholder={"Sem si dopl\u0148 text ot\u00e1zky..."}
+                />
+                <button
+                  type="button"
+                  style={styles.secondary}
+                  onClick={() => loadQuickSlotToForm(slot.text)}
+                >
+                  {"Na\u010d\u00edst do formul\u00e1\u0159e"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={styles.radioRow}>
+            <label style={styles.inlineLab}>
+              <input
+                type="radio"
+                name="adhocMode"
+                checked={adhocMode === "yes_no"}
+                onChange={() => setAdhocMode("yes_no")}
+              />{" "}
+              {"ANO / NE"}
+            </label>
+            <label style={styles.inlineLab}>
+              <input
+                type="radio"
+                name="adhocMode"
+                checked={adhocMode === "number"}
+                onChange={() => setAdhocMode("number")}
+              />{" "}
+              {"Tip na \u010d\u00edslo"}
+            </label>
+            <label style={styles.inlineLab}>
+              <input
+                type="radio"
+                name="adhocMode"
+                checked={adhocMode === "choice"}
+                onChange={() => setAdhocMode("choice")}
+              />{" "}
+              {"V\u00fdb\u011br z mo\u017enost\u00ed"}
+            </label>
+          </div>
+          <label style={styles.labelBlock}>{"Text ot\u00e1zky"}</label>
+          <textarea
+            style={styles.textarea}
+            rows={2}
+            maxLength={500}
+            value={adhocText}
+            onChange={(e) => setAdhocText(e.target.value)}
+            placeholder={"Nap\u0159. Souhlas\u00ed\u0161 s t\u00edmto tvrzen\u00edm?"}
+          />
+          {adhocMode === "number" && (
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+              <div style={{ flex: "1 1 120px" }}>
+                <label style={styles.labelBlock}>{"Minimum"}</label>
+                <input
+                  type="number"
+                  style={styles.textIn}
+                  value={adhocMin}
+                  onChange={(e) => setAdhocMin(e.target.value)}
+                />
+              </div>
+              <div style={{ flex: "1 1 120px" }}>
+                <label style={styles.labelBlock}>{"Maximum"}</label>
+                <input
+                  type="number"
+                  style={styles.textIn}
+                  value={adhocMax}
+                  onChange={(e) => setAdhocMax(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          {adhocMode === "choice" && (
+            <div style={{ marginTop: 12 }}>
+              <label style={styles.labelBlock}>
+                {"Mo\u017enosti (ka\u017ed\u00fd \u0159\u00e1dek = jedna volba, 2\u201312)"}
+              </label>
+              <textarea
+                style={styles.textarea}
+                rows={6}
+                value={adhocChoices}
+                onChange={(e) => setAdhocChoices(e.target.value)}
+                placeholder={"A\nB\nC\nD\nE"}
+              />
+            </div>
+          )}
+          <label style={{ ...styles.inlineLab, marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={adhocActivate}
+              onChange={(e) => setAdhocActivate(e.target.checked)}
+            />
+            {"Hned aktivovat (odeslat student\u016fm jako b\u011b\u017eic\u00ed ot\u00e1zku)"}
+          </label>
+          <div style={{ marginTop: 12 }}>
+            <button type="button" style={styles.primary} disabled={adhocBusy} onClick={createAdhocQuick}>
+              {adhocBusy ? "..." : "P\u0159idat ot\u00e1zku"}
+            </button>
+          </div>
         </section>
       )}
 
@@ -245,12 +466,17 @@ export default function App() {
 
       {questions.length > 0 && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>Ot?zky</h2>
+          <h2 style={styles.h2}>{"Ot\u00e1zky"}</h2>
           <ul style={styles.list}>
             {questions.map((q) => (
               <li key={q.id} style={styles.qItem}>
                 <div>
-                  <strong>Ot\u00e1zka {q.order_index + 1}</strong> ({q.type}) - {q.status}
+                  <strong>
+                    {"Ot\u00e1zka "}
+                    {q.order_index + 1}
+                  </strong>{" "}
+                  ({q.type}) {"\u2014 "}
+                  {q.status}
                   <div style={styles.qText}>{q.text}</div>
                 </div>
                 <div style={styles.row}>
@@ -262,32 +488,35 @@ export default function App() {
                   {q.status === "active" && (
                     <>
                       <button type="button" style={styles.warn} onClick={() => closeQuestion(q.id)}>
-                        Uzav\u0159\u00edt
+                        {"Uzav\u0159\u00edt"}
                       </button>
                       <button type="button" style={styles.primary} onClick={() => showResults(q.id)}>
-                        Uk\u00e1zat v\u00fdsledky student\u016fm
+                        {"Uk\u00e1zat v\u00fdsledky student\u016fm"}
                       </button>
                     </>
                   )}
                   {q.status === "closed" && (
                     <button type="button" style={styles.secondary} onClick={() => showResults(q.id)}>
-                      Uk\u00e1zat v\u00fdsledky student\u016fm
+                      {"Uk\u00e1zat v\u00fdsledky student\u016fm"}
                     </button>
                   )}
                   <button type="button" style={styles.secondary} onClick={() => resetQuestion(q.id)}>
-                    Resetovat ot?zku
+                    {"Resetovat ot\u00e1zku"}
                   </button>
                 </div>
                 {(q.status === "active" || progress?.questionId === q.id) && (
                   <div style={styles.progressBox}>
                     <span style={styles.progressPill}>
-                      Odesl?no: {progress?.questionId === q.id ? progress.submittedCount : 0}
+                      {"Odesl\u00e1no: "}
+                      {progress?.questionId === q.id ? progress.submittedCount : 0}
                     </span>
                     <span style={styles.progressPill}>
-                      \u010cek\u00e1me na: {progress?.questionId === q.id ? progress.waitingCount : 0}
+                      {"\u010cek\u00e1me na: "}
+                      {progress?.questionId === q.id ? progress.waitingCount : 0}
                     </span>
                     <span style={styles.progressPill}>
-                      P\u0159ipojeno: {progress?.questionId === q.id ? progress.connectedStudents : 0}
+                      {"P\u0159ipojeno: "}
+                      {progress?.questionId === q.id ? progress.connectedStudents : 0}
                     </span>
                   </div>
                 )}
@@ -299,14 +528,14 @@ export default function App() {
 
       {activeId && liveResults && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>\u017div\u00e9 v\u00fdsledky</h2>
+          <h2 style={styles.h2}>{"\u017div\u00e9 v\u00fdsledky"}</h2>
           <LiveResultsChart results={liveResults} />
         </section>
       )}
 
       {questions.length > 0 && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>V?sledky ot?zek</h2>
+          <h2 style={styles.h2}>{"V\u00fdsledky ot\u00e1zek"}</h2>
           <div style={styles.resultTabs}>
             {questions.map((q) => (
               <button
@@ -318,22 +547,57 @@ export default function App() {
                   ...(selectedResultQuestionId === q.id ? styles.tabBtnActive : {}),
                 }}
               >
-                Ot?zka {q.order_index + 1}
+                {"Ot\u00e1zka "}
+                {q.order_index + 1}
               </button>
             ))}
           </div>
           {selectedResultQuestion?.results ? (
             <LiveResultsChart results={selectedResultQuestion.results} />
           ) : (
-            <p style={styles.muted}>Pro vybranou ot\u00e1zku zat\u00edm nejsou odpov\u011bdi.</p>
+            <p style={styles.muted}>
+              {"Pro vybranou ot\u00e1zku zat\u00edm nejsou odpov\u011bdi."}
+            </p>
+          )}
+          {selectedResultQuestion && (
+            <div style={styles.analysisBox}>
+              <h3 style={styles.h3}>{"AI shrnut\u00ed (Claude)"}</h3>
+              <p style={styles.muted}>
+                {
+                  "Vol\u00e1 se pouze p\u0159es backend endpoint a pou\u017eije se serverov\u00fd ANTHROPIC_API_KEY. Kl\u00ed\u010d nikdy nejde do prohl\u00ed\u017ee\u010de."
+                }
+              </p>
+              <label style={styles.labelBlock}>{"Dopl\u0148kov\u00fd pokyn pro AI (voliteln\u00e9)"}</label>
+              <textarea
+                style={styles.textarea}
+                rows={3}
+                maxLength={2000}
+                value={analysisInstruction}
+                onChange={(e) => setAnalysisInstruction(e.target.value)}
+                placeholder={"Nap\u0159. Zam\u011b\u0159 se na ekonomickou argumentaci a logick\u00e9 chyby."}
+              />
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  style={styles.primary}
+                  disabled={analysisBusy || !selectedResultQuestion.id}
+                  onClick={runClaudeAnalysis}
+                >
+                  {analysisBusy ? "Analyzuji..." : "Analyzovat odpov\u011bdi v Claude"}
+                </button>
+              </div>
+              {analysisResult?.summary && (
+                <pre style={styles.analysisResult}>{analysisResult.summary}</pre>
+              )}
+            </div>
           )}
         </section>
       )}
 
       <section style={styles.card}>
-        <h2 style={styles.h2}>Dotazy student\u016f</h2>
+        <h2 style={styles.h2}>{"Dotazy student\u016f"}</h2>
         {studentQuestions.length === 0 && (
-          <p style={styles.muted}>Zat\u00edm \u017e\u00e1dn\u00e9 dotazy.</p>
+          <p style={styles.muted}>{"Zat\u00edm \u017e\u00e1dn\u00e9 dotazy."}</p>
         )}
         <ul style={styles.list}>
           {studentQuestions.map((q) => (
@@ -347,7 +611,10 @@ export default function App() {
 
       {session && (
         <p style={styles.muted}>
-          Stav relace: {session.status} ? ID {session.id}
+          {"Stav relace: "}
+          {session.status}
+          {" \u00b7 ID "}
+          {session.id}
         </p>
       )}
     </div>
@@ -365,6 +632,7 @@ const styles = {
   header: { display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" },
   h1: { fontSize: 28, margin: 0 },
   h2: { fontSize: 20, marginTop: 0 },
+  h3: { fontSize: 17, margin: "6px 0 8px" },
   primary: {
     padding: "12px 20px",
     fontSize: 16,
@@ -449,4 +717,55 @@ const styles = {
   },
   muted: { color: "#64748b", fontSize: 14 },
   err: { color: "#b91c1c" },
+  labelBlock: { display: "block", fontSize: 14, fontWeight: 600, marginBottom: 8, color: "#334155" },
+  inlineLab: { fontSize: 14, color: "#334155", cursor: "pointer" },
+  textarea: {
+    width: "100%",
+    minHeight: 72,
+    padding: 12,
+    fontSize: 15,
+    borderRadius: 8,
+    border: "1px solid #cbd5e1",
+    fontFamily: "inherit",
+    boxSizing: "border-box",
+  },
+  textIn: {
+    width: "100%",
+    padding: 10,
+    fontSize: 15,
+    borderRadius: 8,
+    border: "1px solid #cbd5e1",
+    boxSizing: "border-box",
+  },
+  radioRow: { display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 12 },
+  quickSlotWrap: {
+    border: "1px dashed #cbd5e1",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    background: "#ffffff",
+  },
+  quickSlotRow: {
+    display: "grid",
+    gap: 8,
+    marginBottom: 10,
+  },
+  quickSlotLabel: { fontSize: 13, fontWeight: 700, color: "#334155" },
+  analysisBox: {
+    marginTop: 16,
+    borderTop: "1px solid #cbd5e1",
+    paddingTop: 14,
+  },
+  analysisResult: {
+    marginTop: 12,
+    background: "#0f172a",
+    color: "#e2e8f0",
+    padding: 12,
+    borderRadius: 8,
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.5,
+    fontSize: 14,
+    maxHeight: 420,
+    overflowY: "auto",
+  },
 };
