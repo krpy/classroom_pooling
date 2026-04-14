@@ -94,7 +94,7 @@ export function createRouter() {
       const reading = await getDefaultReading();
       res.json(reading);
     } catch {
-      res.status(500).json({ error: "Naètení textu selhalo" });
+      res.status(500).json({ error: "Na\u010dten\u00ed textu selhalo" });
     }
   });
 
@@ -105,7 +105,7 @@ export function createRouter() {
       readingId: "alza-platebni-ekonomika",
     });
     if (!ok) {
-      res.status(400).json({ error: "Nelze pøepnout do reading režimu" });
+      res.status(400).json({ error: "Nelze p\u0159epnout do reading re\u017eimu" });
       return;
     }
     try {
@@ -114,7 +114,7 @@ export function createRouter() {
       notifyPresenterProgress(sessionId, null);
       res.json({ ok: true, reading });
     } catch {
-      res.status(500).json({ error: "Naètení textu selhalo" });
+      res.status(500).json({ error: "Na\u010dten\u00ed textu selhalo" });
     }
   });
 
@@ -127,7 +127,7 @@ export function createRouter() {
         questionId: active.id,
       });
       if (!ok) {
-        res.status(400).json({ error: "Nelze pøepnout na otázku" });
+        res.status(400).json({ error: "Nelze p\u0159epnout na ot\u00e1zku" });
         return;
       }
       broadcastQuestionActivated(sessionId, active);
@@ -137,7 +137,7 @@ export function createRouter() {
     }
     const waiting = setStudentViewMode(sessionId, adminToken, "waiting", null);
     if (!waiting) {
-      res.status(400).json({ error: "Nelze pøepnout do èekání" });
+      res.status(400).json({ error: "Nelze p\u0159epnout do \u010dek\u00e1n\u00ed" });
       return;
     }
     broadcastWaiting(sessionId);
@@ -151,7 +151,7 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const ok = activateQuestion(sessionId, questionId, adminToken);
     if (!ok) {
-      res.status(400).json({ error: "Aktivace se nezdaøila" });
+      res.status(400).json({ error: "Aktivace se nezda\u0159ila" });
       return;
     }
     const q = getQuestion(sessionId, questionId, adminToken);
@@ -169,7 +169,7 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const ok = closeQuestion(sessionId, questionId, adminToken);
     if (!ok) {
-      res.status(400).json({ error: "Uzavøení se nezdaøilo" });
+      res.status(400).json({ error: "Uzav\u0159en\u00ed se nezda\u0159ilo" });
       return;
     }
     broadcastQuestionClosed(sessionId);
@@ -184,7 +184,7 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const ok = resetQuestion(sessionId, questionId, adminToken);
     if (!ok) {
-      res.status(400).json({ error: "Reset otázky se nezdaøil" });
+      res.status(400).json({ error: "Reset ot\u00e1zky se nezda\u0159il" });
       return;
     }
     broadcastWaiting(sessionId);
@@ -197,17 +197,17 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const questionId = Number(req.body?.questionId);
     if (!questionId) {
-      res.status(400).json({ error: "Chybí questionId" });
+      res.status(400).json({ error: "Chyb? questionId" });
       return;
     }
     const q = getQuestion(sessionId, questionId, adminToken);
     if (!q) {
-      res.status(404).json({ error: "Otázka nenalezena" });
+      res.status(404).json({ error: "Ot?zka nenalezena" });
       return;
     }
     const modeSet = setStudentViewMode(sessionId, adminToken, "results", { questionId });
     if (!modeSet) {
-      res.status(400).json({ error: "Nelze pøepnout na výsledky" });
+      res.status(400).json({ error: "Nelze p\u0159epnout na v\u00fdsledky" });
       return;
     }
     const rows = listResponsesForQuestion(questionId);
@@ -221,7 +221,7 @@ export function createRouter() {
     const adminToken = adminTokenFromReq(req);
     const ok = closeSession(sessionId, adminToken);
     if (!ok) {
-      res.status(400).json({ error: "Nelze ukonèit" });
+      res.status(400).json({ error: "Nelze ukon\u010dit" });
       return;
     }
     broadcastQuestionClosed(sessionId);

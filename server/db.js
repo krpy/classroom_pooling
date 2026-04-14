@@ -84,6 +84,24 @@ function migrate(database) {
 
   ensureColumn(database, "sessions", "student_view_mode", "TEXT NOT NULL DEFAULT 'waiting'");
   ensureColumn(database, "sessions", "student_view_data", "TEXT");
+  normalizeMojibakeQuestions(database);
+}
+
+function normalizeMojibakeQuestions(database) {
+  const rows = database.prepare(`SELECT id, order_index, text, options FROM questions`).all();
+  if (!rows.length) return;
+
+  const update = database.prepare(`UPDATE questions SET text = ?, options = ? WHERE id = ?`);
+
+  for (const row of rows) {
+    const canonical = HARDCODED_QUESTIONS[row.order_index];
+    if (!canonical) continue;
+    const text = canonical.text;
+    const optionsJson = JSON.stringify(canonical.options);
+    if (row.text !== text || row.options !== optionsJson) {
+      update.run(text, optionsJson, row.id);
+    }
+  }
 }
 
 function randomFourDigitCode() {
@@ -97,36 +115,41 @@ function randomFourDigitCode() {
 const HARDCODED_QUESTIONS = [
   {
     type: "slider",
-    text: "Odhadni podíl tìchto platebních metod u velkého èeského e-shopu (celkem 100 %)",
+    text: "Odhadni pod\u00edl t\u011bchto platebn\u00edch metod u velk\u00e9ho \u010desk\u00e9ho e-shopu (celkem 100 %)",
     options: {
       items: [
         "Platba kartou / Apple Pay / Google Pay",
-        "Bankovní pøevod / QR platba",
-        "Dobírka",
+        "Bankovn\u00ed p\u0159evod / QR platba",
+        "Dob\u00edrka",
         "BNPL",
-        "Ostatní",
+        "Ostatn\u00ed",
       ],
     },
     order_index: 0,
   },
   {
     type: "ranking",
-    text: "Seøaï faktory podle dùležitosti z pohledu e-shopu (1 = nejdùležitìjší)",
+    text: "Se\u0159a\u010f faktory podle d\u016fle\u017eitosti z pohledu e-shopu (1 = nejd\u016fle\u017eit\u011bj\u0161\u00ed)",
     options: {
       items: [
-        "Nákladovost platební metody",
-        "Vratkovost a nevyzvednuté zásilky",
+        "N\u00e1kladovost platebn\u00ed metody",
+        "Vratkovost a nevyzvednut\u00e9 z\u00e1silky",
         "Dopad na cash-flow",
-        "Zákaznická zkušenost",
+        "Z\u00e1kaznick\u00e1 zku\u0161enost",
       ],
     },
     order_index: 1,
   },
   {
     type: "multiple_choice",
-    text: "Který faktor je z pohledu e-shopu nejdùležitìjší?",
+    text: "Kter\u00fd faktor je z pohledu e-shopu nejd\u016fle\u017eit\u011bj\u0161\u00ed?",
     options: {
-      choices: ["Nákladovost", "Vratkovost", "Cash-flow", "Zákaznická zkušenost"],
+      choices: [
+        "N\u00e1kladovost",
+        "Vratkovost",
+        "Cash-flow",
+        "Z\u00e1kaznick\u00e1 zku\u0161enost",
+      ],
     },
     order_index: 2,
   },

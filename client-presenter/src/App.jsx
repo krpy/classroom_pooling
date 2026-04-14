@@ -34,7 +34,7 @@ export default function App() {
       const res = await fetch(`/api/sessions/${sid}/present`, {
         headers: apiHeaders(token),
       });
-      if (!res.ok) throw new Error("Naètení relace selhalo");
+      if (!res.ok) throw new Error("Na\u010dten\u00ed relace selhalo");
       const data = await res.json();
       setSession(data.session);
       setQuestions(data.questions);
@@ -93,7 +93,7 @@ export default function App() {
     setError(null);
     try {
       const res = await fetch("/api/sessions", { method: "POST" });
-      if (!res.ok) throw new Error("Vytvoøení relace selhalo");
+      if (!res.ok) throw new Error("Vytvo\u0159en\u00ed relace selhalo");
       const data = await res.json();
       setSessionId(data.sessionId);
       setAdminToken(data.adminToken);
@@ -131,7 +131,7 @@ export default function App() {
         method: "POST",
         headers: apiHeaders(adminToken),
       });
-      if (!res.ok) throw new Error("Uzavøení selhalo");
+      if (!res.ok) throw new Error("Uzav\u0159en\u00ed selhalo");
       setActiveId(null);
       setLiveResults(null);
       setProgress(null);
@@ -148,7 +148,7 @@ export default function App() {
         method: "POST",
         headers: apiHeaders(adminToken),
       });
-      if (!res.ok) throw new Error("Reset otázky selhal");
+      if (!res.ok) throw new Error("Reset ot?zky selhal");
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -163,7 +163,7 @@ export default function App() {
         headers: apiHeaders(adminToken),
         body: JSON.stringify({ questionId }),
       });
-      if (!res.ok) throw new Error("Odeslání výsledkù selhalo");
+      if (!res.ok) throw new Error("Odesl\u00e1n\u00ed v\u00fdsledk\u016f selhalo");
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -177,7 +177,7 @@ export default function App() {
         method: "POST",
         headers: apiHeaders(adminToken),
       });
-      if (!res.ok) throw new Error("Pøepnutí na reading selhalo");
+      if (!res.ok) throw new Error("P\u0159epnut\u00ed na reading selhalo");
       const data = await res.json();
       setReading(data.reading || null);
       await loadSession(sessionId, adminToken);
@@ -193,7 +193,7 @@ export default function App() {
         method: "POST",
         headers: apiHeaders(adminToken),
       });
-      if (!res.ok) throw new Error("Pøepnutí na otázku/èekání selhalo");
+      if (!res.ok) throw new Error("P\u0159epnut\u00ed na ot\u00e1zku/\u010dek\u00e1n\u00ed selhalo");
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -205,10 +205,10 @@ export default function App() {
   return (
     <div style={styles.page}>
       <header style={styles.header}>
-        <h1 style={styles.h1}>Tøídní anketa – lektor</h1>
+        <h1 style={styles.h1}>T\u0159\u00eddn\u00ed anketa - lektor</h1>
         {!sessionId && (
           <button type="button" style={styles.primary} onClick={createSession}>
-            Vytvoøit relaci
+            Vytvo\u0159it relaci
           </button>
         )}
       </header>
@@ -220,19 +220,19 @@ export default function App() {
           <div style={styles.pin}>{code}</div>
           {qr?.dataUrl && (
             <div style={styles.qrWrap}>
-              <img src={qr.dataUrl} alt="QR kód pro pøipojení" width={280} height={280} />
+              <img src={qr.dataUrl} alt="QR k\u00f3d pro p\u0159ipojen\u00ed" width={280} height={280} />
               <p style={styles.muted}>{qr.url}</p>
             </div>
           )}
           <div style={styles.row}>
             <button type="button" style={styles.secondary} onClick={showReading}>
-              Pustit reading studentùm
+              Pustit reading student\u016fm
             </button>
             <button type="button" style={styles.secondary} onClick={showQuestionMode}>
-              Zpìt na otázku / èekání
+              Zp\u011bt na ot\u00e1zku / \u010dek\u00e1n\u00ed
             </button>
           </div>
-          <p style={styles.muted}>Aktuální studentský režim: {studentView.mode}</p>
+          <p style={styles.muted}>Aktu\u00e1ln\u00ed studentsk\u00fd re\u017eim: {studentView.mode}</p>
         </section>
       )}
 
@@ -245,12 +245,12 @@ export default function App() {
 
       {questions.length > 0 && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>Otázky</h2>
+          <h2 style={styles.h2}>Ot?zky</h2>
           <ul style={styles.list}>
             {questions.map((q) => (
               <li key={q.id} style={styles.qItem}>
                 <div>
-                  <strong>Otázka {q.order_index + 1}</strong> ({q.type}) — {q.status}
+                  <strong>Ot\u00e1zka {q.order_index + 1}</strong> ({q.type}) - {q.status}
                   <div style={styles.qText}>{q.text}</div>
                 </div>
                 <div style={styles.row}>
@@ -262,32 +262,32 @@ export default function App() {
                   {q.status === "active" && (
                     <>
                       <button type="button" style={styles.warn} onClick={() => closeQuestion(q.id)}>
-                        Uzavøít
+                        Uzav\u0159\u00edt
                       </button>
                       <button type="button" style={styles.primary} onClick={() => showResults(q.id)}>
-                        Ukázat výsledky studentùm
+                        Uk\u00e1zat v\u00fdsledky student\u016fm
                       </button>
                     </>
                   )}
                   {q.status === "closed" && (
                     <button type="button" style={styles.secondary} onClick={() => showResults(q.id)}>
-                      Ukázat výsledky studentùm
+                      Uk\u00e1zat v\u00fdsledky student\u016fm
                     </button>
                   )}
                   <button type="button" style={styles.secondary} onClick={() => resetQuestion(q.id)}>
-                    Resetovat otázku
+                    Resetovat ot?zku
                   </button>
                 </div>
                 {(q.status === "active" || progress?.questionId === q.id) && (
                   <div style={styles.progressBox}>
                     <span style={styles.progressPill}>
-                      Odesláno: {progress?.questionId === q.id ? progress.submittedCount : 0}
+                      Odesl?no: {progress?.questionId === q.id ? progress.submittedCount : 0}
                     </span>
                     <span style={styles.progressPill}>
-                      Èekáme na: {progress?.questionId === q.id ? progress.waitingCount : 0}
+                      \u010cek\u00e1me na: {progress?.questionId === q.id ? progress.waitingCount : 0}
                     </span>
                     <span style={styles.progressPill}>
-                      Pøipojeno: {progress?.questionId === q.id ? progress.connectedStudents : 0}
+                      P\u0159ipojeno: {progress?.questionId === q.id ? progress.connectedStudents : 0}
                     </span>
                   </div>
                 )}
@@ -299,14 +299,14 @@ export default function App() {
 
       {activeId && liveResults && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>Živé výsledky</h2>
+          <h2 style={styles.h2}>\u017div\u00e9 v\u00fdsledky</h2>
           <LiveResultsChart results={liveResults} />
         </section>
       )}
 
       {questions.length > 0 && (
         <section style={styles.card}>
-          <h2 style={styles.h2}>Výsledky otázek</h2>
+          <h2 style={styles.h2}>V?sledky ot?zek</h2>
           <div style={styles.resultTabs}>
             {questions.map((q) => (
               <button
@@ -318,28 +318,28 @@ export default function App() {
                   ...(selectedResultQuestionId === q.id ? styles.tabBtnActive : {}),
                 }}
               >
-                Otázka {q.order_index + 1}
+                Ot?zka {q.order_index + 1}
               </button>
             ))}
           </div>
           {selectedResultQuestion?.results ? (
             <LiveResultsChart results={selectedResultQuestion.results} />
           ) : (
-            <p style={styles.muted}>Pro vybranou otázku zatím nejsou odpovìdi.</p>
+            <p style={styles.muted}>Pro vybranou ot\u00e1zku zat\u00edm nejsou odpov\u011bdi.</p>
           )}
         </section>
       )}
 
       <section style={styles.card}>
-        <h2 style={styles.h2}>Dotazy studentù</h2>
+        <h2 style={styles.h2}>Dotazy student\u016f</h2>
         {studentQuestions.length === 0 && (
-          <p style={styles.muted}>Zatím žádné dotazy.</p>
+          <p style={styles.muted}>Zat\u00edm \u017e\u00e1dn\u00e9 dotazy.</p>
         )}
         <ul style={styles.list}>
           {studentQuestions.map((q) => (
             <li key={q.id} style={styles.qItem}>
               <div style={styles.qText}>{q.text}</div>
-              <div style={styles.muted}>Student: {q.student_token.slice(0, 8)}…</div>
+              <div style={styles.muted}>Student: {q.student_token.slice(0, 8)}...</div>
             </li>
           ))}
         </ul>
@@ -347,7 +347,7 @@ export default function App() {
 
       {session && (
         <p style={styles.muted}>
-          Stav relace: {session.status} · ID {session.id}
+          Stav relace: {session.status} ? ID {session.id}
         </p>
       )}
     </div>
