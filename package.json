@@ -10,7 +10,6 @@
     "test": "node --test server/aggregate.test.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
     "express": "^4.21.2",
     "qrcode": "^1.5.4",
     "ws": "^8.18.0"

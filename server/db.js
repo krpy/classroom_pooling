@@ -1,7 +1,7 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
@@ -11,8 +11,8 @@ let db;
 
 export function getDb() {
   if (!db) {
-    db = new Database(dbPath);
-    db.pragma("journal_mode = WAL");
+    db = new DatabaseSync(dbPath);
+    db.exec("PRAGMA journal_mode = WAL;");
     migrate(db);
   }
   return db;
