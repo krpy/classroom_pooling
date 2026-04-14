@@ -12,6 +12,7 @@ import {
 } from "./db.js";
 import { computeResults, validateResponseValue } from "./aggregate.js";
 import { getDefaultReading } from "./reading.js";
+import { getAdminUiPassword } from "./envAdminUi.js";
 
 /** @typedef {{ ws: import('ws').WebSocket, role: 'student' | 'presenter', sessionId: number, studentToken?: string }} ClientMeta */
 
@@ -20,8 +21,6 @@ const clients = new Map();
 
 /** @type {import('ws').WebSocketServer | null} */
 let wss = null;
-
-const ADMIN_UI_PASSWORD = String(process.env.ADMIN_UI_PASSWORD || "").trim();
 
 export function setupWebSocket(server) {
   wss = new WebSocketServer({ server, path: "/ws" });
@@ -139,7 +138,8 @@ async function handleJoinStudent(ws, msg) {
 }
 
 function handleJoinPresenter(ws, msg) {
-  if (ADMIN_UI_PASSWORD && String(msg.adminUiPassword || "") !== ADMIN_UI_PASSWORD) {
+  const uiSecret = getAdminUiPassword();
+  if (uiSecret && String(msg.adminUiPassword || "") !== uiSecret) {
     safeSend(ws, { type: "error", message: "Chyb\u00ed heslo admin rozhran\u00ed" });
     return;
   }

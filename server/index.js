@@ -5,11 +5,18 @@ import express from "express";
 import { getDb } from "./db.js";
 import { createRouter } from "./routes.js";
 import { setupWebSocket } from "./websocket.js";
+import { getAdminUiPassword } from "./envAdminUi.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
 
 getDb();
+
+if (getAdminUiPassword()) {
+  console.log("[admin] ADMIN_UI_PASSWORD is set — admin API and presenter WS require the gate.");
+} else {
+  console.log("[admin] ADMIN_UI_PASSWORD is not set — admin API is open (dev-style).");
+}
 
 const app = express();
 app.use(createRouter());

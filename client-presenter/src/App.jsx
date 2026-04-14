@@ -66,6 +66,8 @@ export default function App() {
   const [exportError, setExportError] = useState(null);
   const [exportCopied, setExportCopied] = useState(false);
   const [adminUiBootstrapped, setAdminUiBootstrapped] = useState(false);
+  const [adminUiConfigError, setAdminUiConfigError] = useState(null);
+  const [adminUiConfigRetryKey, setAdminUiConfigRetryKey] = useState(0);
   const [adminUiLocked, setAdminUiLocked] = useState(false);
   const [gateUnlocked, setGateUnlocked] = useState(
     () => typeof window !== "undefined" && !!sessionStorage.getItem(ADMIN_UI_STORAGE_KEY)
@@ -124,13 +126,35 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setAdminUiBootstrapped(false);
+    setAdminUiConfigError(null);
     (async () => {
       try {
         const r = await fetch("/api/config");
-        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (!cancelled) {
+            setAdminUiConfigError(
+              `Konfiguraci nelze na\u010d\u00edst (HTTP ${r.status}). Zkontrolujte URL a nasazen\u00ed serveru.`
+            );
+          }
+          return;
+        }
+        const j = await r.json().catch(() => null);
+        if (!j || typeof j.adminUiLocked !== "boolean") {
+          if (!cancelled) {
+            setAdminUiConfigError(
+              "Server nevr\u00e1til platn\u00fd JSON z /api/config (mo\u017en\u00e1 star\u00e9 nasazen\u00ed nebo chybn\u00e1 cesta)."
+            );
+          }
+          return;
+        }
         if (!cancelled) setAdminUiLocked(!!j.adminUiLocked);
       } catch {
-        if (!cancelled) setAdminUiLocked(false);
+        if (!cancelled) {
+          setAdminUiConfigError(
+            "Konfiguraci nelze na\u010d\u00edst (s\u00ed\u0165 nebo CORS). Zkuste znovu nebo zkontrolujte, \u017ee b\u011b\u017e\u00ed stejn\u00fd host jako presenter."
+          );
+        }
       } finally {
         if (!cancelled) setAdminUiBootstrapped(true);
       }
@@ -138,7 +162,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [adminUiConfigRetryKey]);
 
   useEffect(() => {
     if (!sessionId || !adminToken) return undefined;
@@ -437,6 +461,31 @@ export default function App() {
     return (
       <div style={styles.page}>
         <p style={styles.muted}>{"Na\u010d\u00edt\u00e1m\u2026"}</p>
+      </div>
+    );
+  }
+
+  if (adminUiConfigError) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.gateCard}>
+          <h1 style={styles.h1}>{"Konfigurace adminu"}</h1>
+          <p style={styles.err}>{adminUiConfigError}</p>
+          <p style={styles.muted}>
+            {
+              "Po nastaven\u00ed ADMIN_UI_PASSWORD na Railway prove\u010fte redeploy slu\u017eby a ov\u011b\u0159te v logu zpr\u00e1vu o zapnut\u00ed br\u00e1ny."
+            }
+          </p>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              style={styles.primary}
+              onClick={() => setAdminUiConfigRetryKey((k) => k + 1)}
+            >
+              {"Zkusit znovu"}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
