@@ -39,6 +39,24 @@ test("buildAnalysisInput maps number_guess and keeps null reasoning", () => {
   assert.equal(input.responses[0].answer.reasoning, null);
 });
 
+test("buildAnalysisInput maps ranking justification to reasoning", () => {
+  const question = {
+    id: 9,
+    type: "ranking",
+    text: "Rank",
+    options: { items: ["A", "B"] },
+  };
+  const rows = [
+    {
+      student_token: "tok",
+      value: { order: [0, 1], justification: "Dlouhe ekonomicke zduvodneni textu." },
+    },
+  ];
+  const input = buildAnalysisInput(question, rows);
+  assert.equal(input.responses[0].answer.reasoning.length > 15, true);
+  assert.deepEqual(input.responses[0].answer.order, [0, 1]);
+});
+
 test("buildPrompt injects JSON and drops template placeholder", () => {
   const question = {
     id: 1,

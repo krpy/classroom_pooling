@@ -36,10 +36,13 @@ const rankQ = {
   options: { items: ["X", "Y", "Z"] },
 };
 
+const rankJust =
+  "Ekonomicky davam naklady prvni kvuli marzi a cash flow riziku u e-commerce.";
+
 test("ranking aggregate average rank", () => {
   const rows = [
-    { student_token: "a", value: { order: [0, 1, 2] } },
-    { student_token: "b", value: { order: [2, 0, 1] } },
+    { student_token: "a", value: { order: [0, 1, 2], justification: rankJust } },
+    { student_token: "b", value: { order: [2, 0, 1], justification: rankJust } },
   ];
   const r = computeResults(rankQ, rows);
   assert.equal(r.kind, "ranking");
@@ -55,6 +58,26 @@ test("ranking validation rejects duplicates", () => {
     validateResponseValue(rankQ, { order: [0, 0, 1] }),
     false
   );
+});
+
+test("ranking validation requires economic justification", () => {
+  assert.equal(
+    validateResponseValue(rankQ, { order: [0, 1, 2], justification: "kratke" }),
+    false
+  );
+  assert.equal(
+    validateResponseValue(rankQ, { order: [0, 1, 2], justification: rankJust }),
+    true
+  );
+});
+
+test("ranking aggregate ignores responses without justification", () => {
+  const rows = [
+    { student_token: "a", value: { order: [0, 1, 2] } },
+    { student_token: "b", value: { order: [0, 1, 2], justification: rankJust } },
+  ];
+  const r = computeResults(rankQ, rows);
+  assert.equal(r.responseCount, 1);
 });
 
 const mcQ = {

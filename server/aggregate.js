@@ -1,3 +1,11 @@
+const RANKING_JUSTIFICATION_MIN = 20;
+const RANKING_JUSTIFICATION_MAX = 2000;
+
+function validRankingJustification(value) {
+  const j = String(value?.justification ?? value?.reasoning ?? "").trim();
+  return j.length >= RANKING_JUSTIFICATION_MIN && j.length <= RANKING_JUSTIFICATION_MAX;
+}
+
 /**
  * @param {object} question - row with type, options (parsed object)
  * @param {Array<{ student_token: string, value: object }>} responses
@@ -50,6 +58,7 @@ export function computeResults(question, responses) {
         seen.add(idx);
       }
       if (!valid) continue;
+      if (!validRankingJustification(r.value)) continue;
       validCount += 1;
       for (let pos = 0; pos < m; pos++) {
         const itemIndex = order[pos];
@@ -145,7 +154,7 @@ export function validateResponseValue(question, value) {
         return false;
       seen.add(idx);
     }
-    return seen.size === m;
+    return seen.size === m && validRankingJustification(value);
   }
   if (question.type === "multiple_choice") {
     const choices = question.options.choices || [];

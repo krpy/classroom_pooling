@@ -250,6 +250,22 @@
         flex: 1;
         margin-top: 0;
       }
+      .rank-justify {
+        width: 100%;
+        min-height: 100px;
+        font-size: 1rem;
+        padding: 10px 12px;
+        margin-top: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+        resize: vertical;
+      }
+      .rank-justify-hint {
+        margin-top: 8px;
+        font-size: 0.9rem;
+      }
     </style>
   </head>
   <body>
@@ -563,9 +579,40 @@
                 item.firstChild.appendChild(controls);
               });
             }
+            var labJ = document.createElement("label");
+            labJ.setAttribute("for", "rankJustification");
+            labJ.className = "muted";
+            labJ.style.display = "block";
+            labJ.style.marginTop = "14px";
+            labJ.textContent = "Odůvodnění pořadí (ekonomický pohled, min. 20 znaků)";
+            el.screenQ.appendChild(labJ);
+            var taJ = document.createElement("textarea");
+            taJ.id = "rankJustification";
+            taJ.className = "rank-justify";
+            taJ.maxLength = 2000;
+            taJ.placeholder =
+              "Např. proč jsi dal nejdůležitější první faktor, jaké náklady nebo rizika tím řešíš…";
+            el.screenQ.appendChild(taJ);
+            var hintJ = document.createElement("p");
+            hintJ.className = "muted rank-justify-hint";
+            hintJ.id = "rankJustHint";
+            hintJ.textContent = "";
+            el.screenQ.appendChild(hintJ);
             var btn2 = document.createElement("button");
             btn2.type = "button";
-            btn2.textContent = "Odeslat pořadí";
+            btn2.textContent = "Odeslat pořadí a odůvodnění";
+            function rankJustOk() {
+              return (taJ.value || "").trim().length >= 20;
+            }
+            function refreshRankBtn() {
+              var ok = rankJustOk();
+              btn2.disabled = !ok;
+              hintJ.textContent = ok
+                ? ""
+                : "Ještě doplň odůvodnění (alespoň 20 znaků), aby šlo odeslat.";
+            }
+            taJ.addEventListener("input", refreshRankBtn);
+            refreshRankBtn();
             btn2.addEventListener("click", function () {
               var order;
               if (sortable) {
@@ -577,12 +624,17 @@
                   return Number(node.dataset.id);
                 });
               }
+              var just = (taJ.value || "").trim();
+              if (just.length < 20) {
+                showBanner("Doplň odůvodnění pořadí (min. 20 znaků).", "err");
+                return;
+              }
               if (
                 safeWsSend({
                   type: "submit",
                   questionId: q.id,
                   studentToken: studentToken(),
-                  value: { order: order },
+                  value: { order: order, justification: just },
                 })
               ) {
                 setScreens("sent");

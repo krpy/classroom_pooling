@@ -165,7 +165,7 @@ const HARDCODED_QUESTIONS = [
   },
   {
     type: "ranking",
-    text: "Se\u0159a\u010f faktory podle d\u016fle\u017eitosti z pohledu e-shopu (1 = nejd\u016fle\u017eit\u011bj\u0161\u00ed)",
+    text: "Se\u0159a\u010f faktory podle d\u016fle\u017eitosti z pohledu e-commerce (1 = nejd\u016fle\u017eit\u011bj\u0161\u00ed). Pot\u00e9 n\u00ed\u017ee zd\u016fvodni sv\u00e9 po\u0159ad\u00ed z ekonomick\u00e9ho pohledu (min. 20 znak\u016f).",
     options: {
       items: [
         "N\u00e1kladovost platebn\u00ed metody",

@@ -25,7 +25,7 @@ import {
   broadcastReadingActivated,
 } from "./websocket.js";
 import { getDefaultReading } from "./reading.js";
-import { AiClientError, analyzeWithClaude } from "./ai.js";
+import { AiClientError, analyzeWithClaude, buildAnalysisInput } from "./ai.js";
 
 const ANALYZE_RATE_WINDOW_MS = 60_000;
 const ANALYZE_RATE_MAX = 6;
@@ -276,6 +276,19 @@ export function createRouter() {
     const results = computeResults(q, rows);
     broadcastShowResults(sessionId, results);
     res.json({ ok: true, results });
+  });
+
+  router.get("/api/sessions/:sessionId/questions/:questionId/analysis-input", (req, res) => {
+    const sessionId = Number(req.params.sessionId);
+    const questionId = Number(req.params.questionId);
+    const adminToken = adminTokenFromReq(req);
+    const q = getQuestion(sessionId, questionId, adminToken);
+    if (!q) {
+      res.status(404).json({ error: "Ot\u00e1zka nenalezena" });
+      return;
+    }
+    const rows = listResponsesForQuestion(questionId);
+    res.json({ ok: true, input: buildAnalysisInput(q, rows) });
   });
 
   router.post("/api/sessions/:sessionId/analyze", async (req, res) => {

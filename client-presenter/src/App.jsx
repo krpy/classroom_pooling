@@ -9,9 +9,9 @@ function apiHeaders(adminToken) {
 }
 
 const BLANK_QUICK_SLOTS = [
-  { id: "q1", label: "Ot?zka 1", text: "" },
-  { id: "q2", label: "Ot?zka 2", text: "" },
-  { id: "q3", label: "Ot?zka 3", text: "" },
+  { id: "q1", label: "Ot\u00e1zka 1", text: "" },
+  { id: "q2", label: "Ot\u00e1zka 2", text: "" },
+  { id: "q3", label: "Ot\u00e1zka 3", text: "" },
 ];
 
 export default function App() {
@@ -40,6 +40,10 @@ export default function App() {
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [analysisInstruction, setAnalysisInstruction] = useState("");
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [exportInput, setExportInput] = useState(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const [exportCopied, setExportCopied] = useState(false);
 
   const wsUrl = useMemo(() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -108,6 +112,10 @@ export default function App() {
 
   useEffect(() => {
     setAnalysisResult(null);
+    setExportInput(null);
+    setExportError(null);
+    setExportLoading(false);
+    setExportCopied(false);
   }, [selectedResultQuestionId]);
 
   const createSession = async () => {
@@ -294,6 +302,40 @@ export default function App() {
       setError(e.message || "Chyba");
     } finally {
       setAnalysisBusy(false);
+    }
+  };
+
+  const fetchAnalysisInputExport = async () => {
+    if (!sessionId || !adminToken || !selectedResultQuestion?.id) return;
+    setExportLoading(true);
+    setExportError(null);
+    setExportCopied(false);
+    try {
+      const res = await fetch(
+        `/api/sessions/${sessionId}/questions/${selectedResultQuestion.id}/analysis-input`,
+        { headers: apiHeaders(adminToken) }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Nepoda\u0159ilo se na\u010d\u00edst export");
+      }
+      setExportInput(data.input || null);
+    } catch (e) {
+      setExportError(e.message || "Chyba");
+      setExportInput(null);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const copyExportInput = async () => {
+    if (!exportInput) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(exportInput, null, 2));
+      setExportCopied(true);
+      setTimeout(() => setExportCopied(false), 2000);
+    } catch {
+      setExportError("Kop\u00edrov\u00e1n\u00ed selhalo (opr\u00e1vn\u011bn\u00ed prohl\u00ed\u017ee\u010de?).");
     }
   };
 
@@ -560,6 +602,38 @@ export default function App() {
             </p>
           )}
           {selectedResultQuestion && (
+            <details
+              key={selectedResultQuestion.id}
+              style={styles.exportDetails}
+              onToggle={(e) => {
+                if (e.target.open) void fetchAnalysisInputExport();
+              }}
+            >
+              <summary style={styles.exportSummary}>
+                {"Export odpov\u011bd\u00ed pro AI (JSON, anonymn\u00ed ID)"}
+              </summary>
+              <p style={styles.muted}>
+                {
+                  "Stejn\u00fd obsah jako pos\u00edl\u00e1 server do Claude. Rozbal, pokud chce\u0161 nahl\u00e9dnout nebo zkop\u00edrovat do extern\u00edho chatu."
+                }
+              </p>
+              {exportLoading && <p style={styles.muted}>{"Na\u010d\u00edt\u00e1m\u2026"}</p>}
+              {exportError && <p style={styles.err}>{exportError}</p>}
+              {exportInput && (
+                <>
+                  <div style={{ marginTop: 8 }}>
+                    <button type="button" style={styles.secondary} onClick={copyExportInput}>
+                      {exportCopied
+                        ? "Zkop\u00edrov\u00e1no"
+                        : "Kop\u00edrovat JSON do schr\u00e1nky"}
+                    </button>
+                  </div>
+                  <pre style={styles.exportPre}>{JSON.stringify(exportInput, null, 2)}</pre>
+                </>
+              )}
+            </details>
+          )}
+          {selectedResultQuestion && (
             <div style={styles.analysisBox}>
               <h3 style={styles.h3}>{"AI shrnut\u00ed (Claude)"}</h3>
               <p style={styles.muted}>
@@ -767,5 +841,31 @@ const styles = {
     fontSize: 14,
     maxHeight: 420,
     overflowY: "auto",
+  },
+  exportDetails: {
+    marginTop: 16,
+    border: "1px solid #cbd5e1",
+    borderRadius: 10,
+    padding: "8px 12px",
+    background: "#fff",
+  },
+  exportSummary: {
+    cursor: "pointer",
+    fontWeight: 700,
+    color: "#1e293b",
+    fontSize: 15,
+  },
+  exportPre: {
+    marginTop: 10,
+    background: "#f1f5f9",
+    color: "#0f172a",
+    padding: 12,
+    borderRadius: 8,
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.45,
+    fontSize: 12,
+    maxHeight: 360,
+    overflowY: "auto",
+    border: "1px solid #e2e8f0",
   },
 };
