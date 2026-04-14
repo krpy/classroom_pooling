@@ -7,8 +7,11 @@ import {
   listResponsesForQuestion,
   getQuestionByIdInSession,
   getSessionForPresenter,
+  getStudentViewForSession,
+  createStudentQuestion,
 } from "./db.js";
 import { computeResults, validateResponseValue } from "./aggregate.js";
+import { getDefaultReading } from "./reading.js";
 
 /** @typedef {{ ws: import('ws').WebSocket, role: 'student' | 'presenter', sessionId: number, studentToken?: string }} ClientMeta */
 
@@ -27,10 +30,12 @@ export function setupWebSocket(server) {
       try {
         msg = JSON.parse(String(raw));
       } catch {
-        safeSend(ws, { type: "error", message: "NeplatnÃ¡ zprÃ¡va" });
+        safeSend(ws, { type: "error", message: "Neplatná zpráva" });
         return;
       }
-      handleMessage(ws, msg);
+      Promise.resolve(handleMessage(ws, msg)).catch((err) => {
+        safeSend(ws, { type: "error", message: "Chyba websocketu" });
+      });
     });
 
     ws.on("close", () => {
@@ -60,9 +65,9 @@ function studentKey(sessionId, token) {
   return `s:${sessionId}:${token}`;
 }
 
-function handleMessage(ws, msg) {
+async function handleMessage(ws, msg) {
   if (msg.type === "join") {
-    handleJoinStudent(ws, msg);
+    await handleJoinStudent(ws, msg);
     return;
   }
   if (msg.type === "join_presenter") {
@@ -73,19 +78,23 @@ function handleMessage(ws, msg) {
     handleSubmit(ws, msg);
     return;
   }
-  safeSend(ws, { type: "error", message: "NeznÃ¡mÃ½ typ zprÃ¡vy" });
+  if (msg.type === "ask_question") {
+    handleAskQuestion(ws, msg);
+    return;
+  }
+  safeSend(ws, { type: "error", message: "Neznámý typ zprávy" });
 }
 
-function handleJoinStudent(ws, msg) {
+async function handleJoinStudent(ws, msg) {
   const pin = String(msg.pin || "").trim();
   const studentToken = String(msg.studentToken || "").trim();
   if (!/^\d{4}$/.test(pin) || !studentToken) {
-    safeSend(ws, { type: "error", message: "ChybÃ­ PIN nebo token" });
+    safeSend(ws, { type: "error", message: "Chybí PIN nebo token" });
     return;
   }
   const session = getSessionByCode(pin);
   if (!session) {
-    safeSend(ws, { type: "error", message: "NeplatnÃ½ PIN nebo relace je ukonÄena" });
+    safeSend(ws, { type: "error", message: "Neplatný PIN nebo relace je ukonèena" });
     return;
   }
   const sessionId = session.id;
@@ -95,6 +104,25 @@ function handleJoinStudent(ws, msg) {
     sessionId,
     studentToken,
   });
+
+  const view = getStudentViewForSession(sessionId);
+  if (view.mode === "reading") {
+    const reading = await getDefaultReading();
+    safeSend(ws, { type: "reading_activated", reading });
+    notifyPresenterProgress(sessionId, null);
+    return;
+  }
+
+  if (view.mode === "results") {
+    const qId = Number(view.data?.questionId);
+    const question = qId ? getQuestionByIdInSession(qId, sessionId) : null;
+    if (question) {
+      const results = computeResults(question, listResponsesForQuestion(qId));
+      safeSend(ws, { type: "show_results", results });
+      notifyPresenterProgress(sessionId, qId);
+      return;
+    }
+  }
 
   const active = getActiveQuestionForSession(sessionId);
   if (active) {
@@ -112,12 +140,12 @@ function handleJoinPresenter(ws, msg) {
   const sessionId = Number(msg.sessionId);
   const adminToken = String(msg.adminToken || "");
   if (!sessionId || !adminToken) {
-    safeSend(ws, { type: "error", message: "ChybÃ­ relace" });
+    safeSend(ws, { type: "error", message: "Chybí relace" });
     return;
   }
   const bundle = getSessionForPresenter(sessionId, adminToken);
   if (!bundle) {
-    safeSend(ws, { type: "error", message: "NeplatnÃ½ pÅ™Ã­stup lektora" });
+    safeSend(ws, { type: "error", message: "Neplatný pøístup lektora" });
     return;
   }
   clients.set(`p:${sessionId}:${randomUUID()}`, { ws, role: "presenter", sessionId });
@@ -135,28 +163,28 @@ function findStudentMeta(ws) {
 function handleSubmit(ws, msg) {
   const meta = findStudentMeta(ws);
   if (!meta || !meta.studentToken) {
-    safeSend(ws, { type: "error", message: "NejdÅ™Ã­v se pÅ™ipoj (join)" });
+    safeSend(ws, { type: "error", message: "Nejdøív se pøipoj (join)" });
     return;
   }
   const questionId = Number(msg.questionId);
   const studentToken = String(msg.studentToken || "");
   if (studentToken !== meta.studentToken) {
-    safeSend(ws, { type: "error", message: "Token neodpovÃ­dÃ¡ pÅ™ipojenÃ­" });
+    safeSend(ws, { type: "error", message: "Token neodpovídá pøipojení" });
     return;
   }
   const value = msg.value;
   if (value === undefined || typeof value !== "object") {
-    safeSend(ws, { type: "error", message: "ChybÃ­ odpovÄ›Ä" });
+    safeSend(ws, { type: "error", message: "Chybí odpovìï" });
     return;
   }
 
   const question = getQuestionByIdInSession(questionId, meta.sessionId);
   if (!question || question.status !== "active") {
-    safeSend(ws, { type: "error", message: "OtÃ¡zka nenÃ­ aktivnÃ­" });
+    safeSend(ws, { type: "error", message: "Otázka není aktivní" });
     return;
   }
   if (!validateResponseValue(question, value)) {
-    safeSend(ws, { type: "error", message: "NeplatnÃ½ formÃ¡t odpovÄ›di" });
+    safeSend(ws, { type: "error", message: "Neplatný formát odpovìdi" });
     return;
   }
 
@@ -169,6 +197,29 @@ function handleSubmit(ws, msg) {
     questionId,
     results,
     progress,
+  });
+}
+
+function handleAskQuestion(ws, msg) {
+  const meta = findStudentMeta(ws);
+  if (!meta || !meta.studentToken) {
+    safeSend(ws, { type: "error", message: "Nejdøív se pøipoj (join)" });
+    return;
+  }
+  const text = String(msg.text || "").trim();
+  if (!text) {
+    safeSend(ws, { type: "error", message: "Napiš dotaz" });
+    return;
+  }
+  if (text.length > 1000) {
+    safeSend(ws, { type: "error", message: "Dotaz je pøíliš dlouhý" });
+    return;
+  }
+  const saved = createStudentQuestion(meta.sessionId, meta.studentToken, text);
+  safeSend(ws, { type: "question_saved" });
+  broadcastToPresenters(meta.sessionId, {
+    type: "student_question_received",
+    question: saved,
   });
 }
 
@@ -211,6 +262,13 @@ export function broadcastShowResults(sessionId, results) {
   }
 }
 
+export function broadcastReadingActivated(sessionId, reading) {
+  const payload = { type: "reading_activated", reading };
+  for (const [key, meta] of clients.entries()) {
+    if (key.startsWith(`s:${sessionId}:`)) safeSend(meta.ws, payload);
+  }
+}
+
 function broadcastToPresenters(sessionId, payload) {
   for (const meta of clients.values()) {
     if (meta.role === "presenter" && meta.sessionId === sessionId) {
@@ -230,8 +288,7 @@ function countConnectedStudents(sessionId) {
 }
 
 function buildProgress(sessionId, questionId = null) {
-  const activeQuestionId =
-    questionId ?? getActiveQuestionForSession(sessionId)?.id ?? null;
+  const activeQuestionId = questionId ?? getActiveQuestionForSession(sessionId)?.id ?? null;
   const connectedStudents = countConnectedStudents(sessionId);
   if (!activeQuestionId) {
     return {

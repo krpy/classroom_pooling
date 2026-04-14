@@ -213,6 +213,34 @@
         border-bottom: 1px solid var(--border);
         font-size: 0.98rem;
       }
+      .reading-doc h1,
+      .reading-doc h2,
+      .reading-doc h3 {
+        line-height: 1.3;
+        margin: 16px 0 8px;
+      }
+      .reading-doc p,
+      .reading-doc li {
+        line-height: 1.55;
+      }
+      #askBox {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+      #askText {
+        width: 100%;
+        min-height: 80px;
+        font-size: 1rem;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: var(--text);
+      }
+      #askBtn {
+        margin-top: 10px;
+      }
     </style>
   </head>
   <body>
@@ -229,11 +257,17 @@
         <p class="muted">Jakmile lektor spustí otázku, zobrazí se ti tady.</p>
       </div>
       <div id="screen-q" hidden></div>
+      <div id="screen-reading" hidden></div>
       <div id="screen-sent" hidden>
         <h1>Odpověď odeslána</h1>
         <p class="muted">Čekej na výsledky.</p>
       </div>
       <div id="screen-results" hidden></div>
+      <div id="askBox" hidden>
+        <label for="askText">Máš dotaz na lektora?</label>
+        <textarea id="askText" maxlength="1000" placeholder="Napiš svůj dotaz..."></textarea>
+        <button type="button" id="askBtn">Odeslat dotaz</button>
+      </div>
       <div id="banner"></div>
     </div>
     <script>
@@ -271,8 +305,12 @@
           screenPin: document.getElementById("screen-pin"),
           screenWait: document.getElementById("screen-wait"),
           screenQ: document.getElementById("screen-q"),
+          screenReading: document.getElementById("screen-reading"),
           screenSent: document.getElementById("screen-sent"),
           screenResults: document.getElementById("screen-results"),
+          askBox: document.getElementById("askBox"),
+          askText: document.getElementById("askText"),
+          askBtn: document.getElementById("askBtn"),
           banner: document.getElementById("banner"),
         };
 
@@ -298,8 +336,10 @@
           el.screenPin.hidden = name !== "pin";
           el.screenWait.hidden = name !== "wait";
           el.screenQ.hidden = name !== "q";
+          el.screenReading.hidden = name !== "reading";
           el.screenSent.hidden = name !== "sent";
           el.screenResults.hidden = name !== "results";
+          el.askBox.hidden = name === "pin";
         }
 
         function wsUrl() {
@@ -361,6 +401,15 @@
               destroySortable();
               renderResults(msg.results);
               setScreens("results");
+            }
+            if (msg.type === "reading_activated") {
+              destroySortable();
+              renderReading(msg.reading);
+              setScreens("reading");
+            }
+            if (msg.type === "question_saved") {
+              el.askText.value = "";
+              showBanner("Dotaz byl odeslán.", "ok");
             }
           };
           ws.onclose = function () {
@@ -651,6 +700,17 @@
           el.screenResults.appendChild(foot);
         }
 
+        function renderReading(reading) {
+          el.screenReading.innerHTML = "";
+          var h = document.createElement("h1");
+          h.textContent = reading && reading.title ? reading.title : "Reading";
+          el.screenReading.appendChild(h);
+          var body = document.createElement("div");
+          body.className = "reading-doc";
+          body.innerHTML = reading && reading.html ? reading.html : "<p>Text není dostupný.</p>";
+          el.screenReading.appendChild(body);
+        }
+
         el.btnJoin.addEventListener("click", function () {
           var pin = (el.pin.value || "").replace(/\D/g, "").slice(0, 4);
           if (pin.length !== 4) {
@@ -659,6 +719,15 @@
           }
           showBanner("Připojuji…", "ok");
           connect(pin);
+        });
+
+        el.askBtn.addEventListener("click", function () {
+          var text = (el.askText.value || "").trim();
+          if (!text) {
+            showBanner("Napiš dotaz, prosím.", "err");
+            return;
+          }
+          safeWsSend({ type: "ask_question", text: text });
         });
 
         if (initialPin.length === 4) {

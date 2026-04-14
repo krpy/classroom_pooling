@@ -7,10 +7,11 @@
     "build": "vite build --config client-presenter/vite.config.js",
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test server/aggregate.test.js"
+    "test": "node --test server/*.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "mammoth": "^1.11.0",
     "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },

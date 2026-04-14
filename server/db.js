@@ -31,6 +31,12 @@ function withTransaction(database, fn) {
   }
 }
 
+function ensureColumn(database, table, columnName, definition) {
+  const cols = database.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some((col) => col.name === columnName)) return;
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${columnName} ${definition};`);
+}
+
 function migrate(database) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -38,6 +44,8 @@ function migrate(database) {
       code TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL CHECK (status IN ('waiting', 'active', 'closed')),
       admin_token TEXT NOT NULL UNIQUE,
+      student_view_mode TEXT NOT NULL DEFAULT 'waiting' CHECK (student_view_mode IN ('waiting', 'question', 'results', 'reading')),
+      student_view_data TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -61,9 +69,21 @@ function migrate(database) {
       UNIQUE (question_id, student_token)
     );
 
+    CREATE TABLE IF NOT EXISTS student_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      student_token TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_questions_session ON questions(session_id);
     CREATE INDEX IF NOT EXISTS idx_responses_question ON responses(question_id);
+    CREATE INDEX IF NOT EXISTS idx_student_questions_session ON student_questions(session_id);
   `);
+
+  ensureColumn(database, "sessions", "student_view_mode", "TEXT NOT NULL DEFAULT 'waiting'");
+  ensureColumn(database, "sessions", "student_view_data", "TEXT");
 }
 
 function randomFourDigitCode() {
@@ -77,36 +97,36 @@ function randomFourDigitCode() {
 const HARDCODED_QUESTIONS = [
   {
     type: "slider",
-    text: "Odhadni podÃ­l tÄ›chto platebnÃ­ch metod u velkÃ©ho ÄeskÃ©ho e-shopu (celkem 100 %)",
+    text: "Odhadni podíl tìchto platebních metod u velkého èeského e-shopu (celkem 100 %)",
     options: {
       items: [
         "Platba kartou / Apple Pay / Google Pay",
-        "BankovnÃ­ pÅ™evod / QR platba",
-        "DobÃ­rka",
+        "Bankovní pøevod / QR platba",
+        "Dobírka",
         "BNPL",
-        "OstatnÃ­",
+        "Ostatní",
       ],
     },
     order_index: 0,
   },
   {
     type: "ranking",
-    text: "SeÅ™aÄ faktory podle dÅ¯leÅ¾itosti z pohledu e-shopu (1 = nejdÅ¯leÅ¾itÄ›jÅ¡Ã­)",
+    text: "Seøaï faktory podle dùležitosti z pohledu e-shopu (1 = nejdùležitìjší)",
     options: {
       items: [
-        "NÃ¡kladovost platebnÃ­ metody",
-        "Vratkovost a nevyzvednutÃ© zÃ¡silky",
+        "Nákladovost platební metody",
+        "Vratkovost a nevyzvednuté zásilky",
         "Dopad na cash-flow",
-        "ZÃ¡kaznickÃ¡ zkuÅ¡enost",
+        "Zákaznická zkušenost",
       ],
     },
     order_index: 1,
   },
   {
     type: "multiple_choice",
-    text: "KterÃ½ faktor je z pohledu e-shopu nejdÅ¯leÅ¾itÄ›jÅ¡Ã­?",
+    text: "Který faktor je z pohledu e-shopu nejdùležitìjší?",
     options: {
-      choices: ["NÃ¡kladovost", "Vratkovost", "Cash-flow", "ZÃ¡kaznickÃ¡ zkuÅ¡enost"],
+      choices: ["Nákladovost", "Vratkovost", "Cash-flow", "Zákaznická zkušenost"],
     },
     order_index: 2,
   },
@@ -118,7 +138,8 @@ export function createSession() {
   const adminToken = randomUUID();
 
   const insertSession = database.prepare(
-    `INSERT INTO sessions (code, status, admin_token) VALUES (?, 'waiting', ?)`
+    `INSERT INTO sessions (code, status, admin_token, student_view_mode, student_view_data)
+     VALUES (?, 'waiting', ?, 'waiting', NULL)`
   );
   const insertQuestion = database.prepare(
     `INSERT INTO questions (session_id, type, text, options, order_index, status)
@@ -139,13 +160,15 @@ export function createSession() {
     }
     return createdSessionId;
   });
+
   return { sessionId, code, adminToken };
 }
 
 export function getSessionByCode(code) {
-  return getDb()
+  const row = getDb()
     .prepare(`SELECT * FROM sessions WHERE code = ? AND status != 'closed'`)
     .get(code);
+  return row ? parseSessionRow(row) : null;
 }
 
 export function getSessionForPresenter(sessionId, adminToken) {
@@ -154,17 +177,30 @@ export function getSessionForPresenter(sessionId, adminToken) {
     .get(sessionId, adminToken);
   if (!session) return null;
   const questions = getDb()
-    .prepare(
-      `SELECT * FROM questions WHERE session_id = ? ORDER BY order_index ASC`
-    )
+    .prepare(`SELECT * FROM questions WHERE session_id = ? ORDER BY order_index ASC`)
     .all(sessionId);
-  return { session, questions: questions.map(parseQuestionRow) };
+  return { session: parseSessionRow(session), questions: questions.map(parseQuestionRow) };
 }
 
 function parseQuestionRow(row) {
   return {
     ...row,
     options: JSON.parse(row.options),
+  };
+}
+
+function parseSessionRow(row) {
+  let parsedData = null;
+  if (row.student_view_data) {
+    try {
+      parsedData = JSON.parse(row.student_view_data);
+    } catch {
+      parsedData = null;
+    }
+  }
+  return {
+    ...row,
+    student_view_data: parsedData,
   };
 }
 
@@ -181,9 +217,7 @@ export function getQuestion(sessionId, questionId, adminToken) {
 
 export function getActiveQuestionForSession(sessionId) {
   const row = getDb()
-    .prepare(
-      `SELECT * FROM questions WHERE session_id = ? AND status = 'active' LIMIT 1`
-    )
+    .prepare(`SELECT * FROM questions WHERE session_id = ? AND status = 'active' LIMIT 1`)
     .get(sessionId);
   return row ? parseQuestionRow(row) : null;
 }
@@ -210,7 +244,13 @@ export function activateQuestion(sessionId, questionId, adminToken) {
     database
       .prepare(`UPDATE questions SET status = 'active' WHERE id = ? AND session_id = ?`)
       .run(questionId, sessionId);
-    database.prepare(`UPDATE sessions SET status = 'active' WHERE id = ?`).run(sessionId);
+    database
+      .prepare(
+        `UPDATE sessions
+         SET status = 'active', student_view_mode = 'question', student_view_data = ?
+         WHERE id = ?`
+      )
+      .run(JSON.stringify({ questionId }), sessionId);
   });
   return true;
 }
@@ -224,9 +264,38 @@ export function closeQuestion(sessionId, questionId, adminToken) {
     )
     .get(questionId, sessionId, adminToken);
   if (!row) return false;
-  database
-    .prepare(`UPDATE questions SET status = 'closed' WHERE id = ?`)
-    .run(questionId);
+
+  withTransaction(database, () => {
+    database.prepare(`UPDATE questions SET status = 'closed' WHERE id = ?`).run(questionId);
+    database
+      .prepare(`UPDATE sessions SET student_view_mode = 'waiting', student_view_data = NULL WHERE id = ?`)
+      .run(sessionId);
+  });
+  return true;
+}
+
+export function resetQuestion(sessionId, questionId, adminToken) {
+  const database = getDb();
+  const row = database
+    .prepare(
+      `SELECT q.id, q.status FROM questions q
+       JOIN sessions s ON s.id = q.session_id
+       WHERE q.id = ? AND q.session_id = ? AND s.admin_token = ?`
+    )
+    .get(questionId, sessionId, adminToken);
+  if (!row) return false;
+
+  withTransaction(database, () => {
+    database.prepare(`DELETE FROM responses WHERE question_id = ?`).run(questionId);
+    database.prepare(`UPDATE questions SET status = 'hidden' WHERE id = ?`).run(questionId);
+    if (row.status === "active") {
+      database
+        .prepare(
+          `UPDATE sessions SET student_view_mode = 'waiting', student_view_data = NULL WHERE id = ?`
+        )
+        .run(sessionId);
+    }
+  });
   return true;
 }
 
@@ -257,18 +326,65 @@ export function listResponsesForQuestion(questionId) {
     .map((r) => ({ student_token: r.student_token, value: JSON.parse(r.value) }));
 }
 
-export function getQuestionByIdForStudent(questionId, sessionId) {
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM questions WHERE id = ? AND session_id = ? AND status = 'active'`
-    )
-    .get(questionId, sessionId);
-  return row ? parseQuestionRow(row) : null;
-}
-
 export function getQuestionByIdInSession(questionId, sessionId) {
   const row = getDb()
     .prepare(`SELECT * FROM questions WHERE id = ? AND session_id = ?`)
     .get(questionId, sessionId);
   return row ? parseQuestionRow(row) : null;
+}
+
+export function setStudentViewMode(sessionId, adminToken, mode, data = null) {
+  const payload = data ? JSON.stringify(data) : null;
+  const result = getDb()
+    .prepare(
+      `UPDATE sessions
+       SET student_view_mode = ?, student_view_data = ?
+       WHERE id = ? AND admin_token = ?`
+    )
+    .run(mode, payload, sessionId, adminToken);
+  return result.changes > 0;
+}
+
+export function getStudentViewForSession(sessionId) {
+  const row = getDb()
+    .prepare(`SELECT student_view_mode, student_view_data FROM sessions WHERE id = ?`)
+    .get(sessionId);
+  if (!row) return { mode: "waiting", data: null };
+  let data = null;
+  if (row.student_view_data) {
+    try {
+      data = JSON.parse(row.student_view_data);
+    } catch {
+      data = null;
+    }
+  }
+  return { mode: row.student_view_mode || "waiting", data };
+}
+
+export function createStudentQuestion(sessionId, studentToken, text) {
+  const result = getDb()
+    .prepare(
+      `INSERT INTO student_questions (session_id, student_token, text)
+       VALUES (?, ?, ?)`
+    )
+    .run(sessionId, studentToken, text);
+  const id = Number(result.lastInsertRowid);
+  return getDb()
+    .prepare(`SELECT id, session_id, student_token, text, created_at FROM student_questions WHERE id = ?`)
+    .get(id);
+}
+
+export function listStudentQuestions(sessionId, adminToken) {
+  const ok = getDb()
+    .prepare(`SELECT 1 FROM sessions WHERE id = ? AND admin_token = ?`)
+    .get(sessionId, adminToken);
+  if (!ok) return null;
+  return getDb()
+    .prepare(
+      `SELECT id, session_id, student_token, text, created_at
+       FROM student_questions
+       WHERE session_id = ?
+       ORDER BY id DESC`
+    )
+    .all(sessionId);
 }
