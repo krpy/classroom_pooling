@@ -13,9 +13,22 @@ export function getDb() {
   if (!db) {
     db = new DatabaseSync(dbPath);
     db.exec("PRAGMA journal_mode = WAL;");
+    db.exec("PRAGMA foreign_keys = ON;");
     migrate(db);
   }
   return db;
+}
+
+function withTransaction(database, fn) {
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    const result = fn();
+    database.exec("COMMIT;");
+    return result;
+  } catch (error) {
+    database.exec("ROLLBACK;");
+    throw error;
+  }
 }
 
 function migrate(database) {
@@ -112,22 +125,20 @@ export function createSession() {
      VALUES (?, ?, ?, ?, ?, 'hidden')`
   );
 
-  const tx = database.transaction(() => {
+  const sessionId = withTransaction(database, () => {
     const info = insertSession.run(code, adminToken);
-    const sessionId = info.lastInsertRowid;
+    const createdSessionId = Number(info.lastInsertRowid);
     for (const q of HARDCODED_QUESTIONS) {
       insertQuestion.run(
-        sessionId,
+        createdSessionId,
         q.type,
         q.text,
         JSON.stringify(q.options),
         q.order_index
       );
     }
-    return sessionId;
+    return createdSessionId;
   });
-
-  const sessionId = tx();
   return { sessionId, code, adminToken };
 }
 
@@ -192,7 +203,7 @@ export function activateQuestion(sessionId, questionId, adminToken) {
     .get(questionId, sessionId);
   if (!target || target.status !== "hidden") return false;
 
-  const tx = database.transaction(() => {
+  withTransaction(database, () => {
     database
       .prepare(`UPDATE questions SET status = 'closed' WHERE session_id = ? AND status = 'active'`)
       .run(sessionId);
@@ -201,7 +212,6 @@ export function activateQuestion(sessionId, questionId, adminToken) {
       .run(questionId, sessionId);
     database.prepare(`UPDATE sessions SET status = 'active' WHERE id = ?`).run(sessionId);
   });
-  tx();
   return true;
 }
 
