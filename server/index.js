@@ -13,9 +13,9 @@ const rootDir = path.join(__dirname, "..");
 getDb();
 
 if (getAdminUiPassword()) {
-  console.log("[admin] ADMIN_UI_PASSWORD is set — admin API and presenter WS require the gate.");
+  console.log("[admin] ADMIN_UI_PASSWORD is set — required only for POST /api/sessions (new workshop).");
 } else {
-  console.log("[admin] ADMIN_UI_PASSWORD is not set — admin API is open (dev-style).");
+  console.log("[admin] ADMIN_UI_PASSWORD is not set — anyone can create a session (dev-style).");
 }
 
 const app = express();

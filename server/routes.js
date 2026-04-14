@@ -36,14 +36,20 @@ function adminUiPasswordHeaderOk(req) {
   return String(req.headers["x-admin-ui-password"] || "") === getAdminUiPassword();
 }
 
+/**
+ * When ADMIN_UI_PASSWORD is set, only creating a new session requires it.
+ * All other presenter APIs rely on the per-session admin token; students use WebSocket only.
+ */
 function requireAdminUiPassword(req, res, next) {
   const secret = getAdminUiPassword();
   if (!secret) return next();
   const path = (req.path || "").replace(/\/+$/, "") || "/";
   if (path === "/api/config" || path === "/api/admin-ui/login") return next();
+  const isCreateSession = req.method === "POST" && path === "/api/sessions";
+  if (!isCreateSession) return next();
   if (!adminUiPasswordHeaderOk(req)) {
     res.status(401).json({
-      error: "Vy\u017eadov\u00e1no heslo admin rozhran\u00ed.",
+      error: "Vy\u017eadov\u00e1no heslo admin rozhran\u00ed (pro zalo\u017een\u00ed nov\u00e9 relace).",
       adminUiLocked: true,
     });
     return;

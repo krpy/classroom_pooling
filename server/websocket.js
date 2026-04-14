@@ -12,7 +12,6 @@ import {
 } from "./db.js";
 import { computeResults, validateResponseValue } from "./aggregate.js";
 import { getDefaultReading } from "./reading.js";
-import { getAdminUiPassword } from "./envAdminUi.js";
 
 /** @typedef {{ ws: import('ws').WebSocket, role: 'student' | 'presenter', sessionId: number, studentToken?: string }} ClientMeta */
 
@@ -138,11 +137,6 @@ async function handleJoinStudent(ws, msg) {
 }
 
 function handleJoinPresenter(ws, msg) {
-  const uiSecret = getAdminUiPassword();
-  if (uiSecret && String(msg.adminUiPassword || "") !== uiSecret) {
-    safeSend(ws, { type: "error", message: "Chyb\u00ed heslo admin rozhran\u00ed" });
-    return;
-  }
   const sessionId = Number(msg.sessionId);
   const adminToken = String(msg.adminToken || "");
   if (!sessionId || !adminToken) {

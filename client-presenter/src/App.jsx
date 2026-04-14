@@ -20,13 +20,10 @@ function createSessionHeaders() {
 }
 
 function apiHeaders(adminToken) {
-  const ui = readAdminUiPassword();
-  const h = {
+  return {
     Authorization: `Bearer ${adminToken}`,
     "Content-Type": "application/json",
   };
-  if (ui) h["X-Admin-UI-Password"] = ui;
-  return h;
 }
 
 const BLANK_QUICK_SLOTS = [
@@ -168,14 +165,13 @@ export default function App() {
     if (!sessionId || !adminToken) return undefined;
     const ws = new WebSocket(wsUrl);
     ws.onopen = () => {
-      const payload = {
-        type: "join_presenter",
-        sessionId,
-        adminToken,
-      };
-      const ui = readAdminUiPassword();
-      if (ui) payload.adminUiPassword = ui;
-      ws.send(JSON.stringify(payload));
+      ws.send(
+        JSON.stringify({
+          type: "join_presenter",
+          sessionId,
+          adminToken,
+        })
+      );
     };
     ws.onmessage = (ev) => {
       try {
@@ -497,7 +493,7 @@ export default function App() {
           <h1 style={styles.h1}>{"Admin rozhran\u00ed"}</h1>
           <p style={styles.muted}>
             {
-              "Zadej heslo z prom\u011bnn\u00e9 prost\u0159ed\u00ed ADMIN_UI_PASSWORD na serveru (nap\u0159. Railway Variables)."
+              "Heslo z prom\u011bnn\u00e9 ADMIN_UI_PASSWORD (Railway) je pot\u0159eba jen pro zalo\u017een\u00ed nov\u00e9 relace. Ovl\u00e1d\u00e1n\u00ed relace pak sta\u010d\u00ed PIN a admin token z prohl\u00ed\u017ee\u010de lektora."
             }
           </p>
           <input
