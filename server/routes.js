@@ -31,6 +31,27 @@ const ANALYZE_RATE_WINDOW_MS = 60_000;
 const ANALYZE_RATE_MAX = 6;
 const analyzeRate = new Map();
 
+/** When set (e.g. Railway variable ADMIN_UI_PASSWORD), all /api routes except login/config require this header. */
+const ADMIN_UI_PASSWORD = String(process.env.ADMIN_UI_PASSWORD || "").trim();
+
+function adminUiPasswordHeaderOk(req) {
+  return String(req.headers["x-admin-ui-password"] || "") === ADMIN_UI_PASSWORD;
+}
+
+function requireAdminUiPassword(req, res, next) {
+  if (!ADMIN_UI_PASSWORD) return next();
+  const path = req.path || "";
+  if (path === "/api/config" || path === "/api/admin-ui/login") return next();
+  if (!adminUiPasswordHeaderOk(req)) {
+    res.status(401).json({
+      error: "Vy\u017eadov\u00e1no heslo admin rozhran\u00ed.",
+      adminUiLocked: true,
+    });
+    return;
+  }
+  next();
+}
+
 function adminTokenFromReq(req) {
   const h = req.headers.authorization;
   if (h && h.startsWith("Bearer ")) return h.slice(7);
@@ -54,6 +75,25 @@ function checkAnalyzeRateLimit(sessionId, adminToken) {
 export function createRouter() {
   const router = express.Router();
   router.use(express.json({ limit: "1mb" }));
+
+  router.get("/api/config", (_req, res) => {
+    res.json({ adminUiLocked: Boolean(ADMIN_UI_PASSWORD) });
+  });
+
+  router.post("/api/admin-ui/login", (req, res) => {
+    if (!ADMIN_UI_PASSWORD) {
+      res.json({ ok: true });
+      return;
+    }
+    const p = String(req.body?.password || "");
+    if (p !== ADMIN_UI_PASSWORD) {
+      res.status(401).json({ ok: false, error: "\u0160patn\u00e9 heslo" });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  router.use(requireAdminUiPassword);
 
   router.post("/api/sessions", (_req, res) => {
     const { sessionId, code, adminToken } = createSession();

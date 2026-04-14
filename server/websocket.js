@@ -21,6 +21,8 @@ const clients = new Map();
 /** @type {import('ws').WebSocketServer | null} */
 let wss = null;
 
+const ADMIN_UI_PASSWORD = String(process.env.ADMIN_UI_PASSWORD || "").trim();
+
 export function setupWebSocket(server) {
   wss = new WebSocketServer({ server, path: "/ws" });
 
@@ -30,7 +32,7 @@ export function setupWebSocket(server) {
       try {
         msg = JSON.parse(String(raw));
       } catch {
-        safeSend(ws, { type: "error", message: "Neplatná zpráva" });
+        safeSend(ws, { type: "error", message: "Neplatn˜ zpr˜va" });
         return;
       }
       Promise.resolve(handleMessage(ws, msg)).catch((err) => {
@@ -82,19 +84,19 @@ async function handleMessage(ws, msg) {
     handleAskQuestion(ws, msg);
     return;
   }
-  safeSend(ws, { type: "error", message: "Neznámı typ zprávy" });
+  safeSend(ws, { type: "error", message: "Nezn˜m˜ typ zpr˜vy" });
 }
 
 async function handleJoinStudent(ws, msg) {
   const pin = String(msg.pin || "").trim();
   const studentToken = String(msg.studentToken || "").trim();
   if (!/^\d{4}$/.test(pin) || !studentToken) {
-    safeSend(ws, { type: "error", message: "Chybí PIN nebo token" });
+    safeSend(ws, { type: "error", message: "Chyb˜ PIN nebo token" });
     return;
   }
   const session = getSessionByCode(pin);
   if (!session) {
-    safeSend(ws, { type: "error", message: "Neplatnı PIN nebo relace je ukonèena" });
+    safeSend(ws, { type: "error", message: "Neplatn˜ PIN nebo relace je ukon˜ena" });
     return;
   }
   const sessionId = session.id;
@@ -137,15 +139,19 @@ async function handleJoinStudent(ws, msg) {
 }
 
 function handleJoinPresenter(ws, msg) {
+  if (ADMIN_UI_PASSWORD && String(msg.adminUiPassword || "") !== ADMIN_UI_PASSWORD) {
+    safeSend(ws, { type: "error", message: "Chyb\u00ed heslo admin rozhran\u00ed" });
+    return;
+  }
   const sessionId = Number(msg.sessionId);
   const adminToken = String(msg.adminToken || "");
   if (!sessionId || !adminToken) {
-    safeSend(ws, { type: "error", message: "Chybí relace" });
+    safeSend(ws, { type: "error", message: "Chyb˜ relace" });
     return;
   }
   const bundle = getSessionForPresenter(sessionId, adminToken);
   if (!bundle) {
-    safeSend(ws, { type: "error", message: "Neplatnı pøístup lektora" });
+    safeSend(ws, { type: "error", message: "Neplatn˜ p˜˜stup lektora" });
     return;
   }
   clients.set(`p:${sessionId}:${randomUUID()}`, { ws, role: "presenter", sessionId });
@@ -163,28 +169,28 @@ function findStudentMeta(ws) {
 function handleSubmit(ws, msg) {
   const meta = findStudentMeta(ws);
   if (!meta || !meta.studentToken) {
-    safeSend(ws, { type: "error", message: "Nejdøív se pøipoj (join)" });
+    safeSend(ws, { type: "error", message: "Nejd˜˜v se p˜ipoj (join)" });
     return;
   }
   const questionId = Number(msg.questionId);
   const studentToken = String(msg.studentToken || "");
   if (studentToken !== meta.studentToken) {
-    safeSend(ws, { type: "error", message: "Token neodpovídá pøipojení" });
+    safeSend(ws, { type: "error", message: "Token neodpov˜d˜ p˜ipojen˜" });
     return;
   }
   const value = msg.value;
   if (value === undefined || typeof value !== "object") {
-    safeSend(ws, { type: "error", message: "Chybí odpovìï" });
+    safeSend(ws, { type: "error", message: "Chyb˜ odpov˜˜" });
     return;
   }
 
   const question = getQuestionByIdInSession(questionId, meta.sessionId);
   if (!question || question.status !== "active") {
-    safeSend(ws, { type: "error", message: "Otázka není aktivní" });
+    safeSend(ws, { type: "error", message: "Ot˜zka nen˜ aktivn˜" });
     return;
   }
   if (!validateResponseValue(question, value)) {
-    safeSend(ws, { type: "error", message: "Neplatnı formát odpovìdi" });
+    safeSend(ws, { type: "error", message: "Neplatn˜ form˜t odpov˜di" });
     return;
   }
 
@@ -203,16 +209,16 @@ function handleSubmit(ws, msg) {
 function handleAskQuestion(ws, msg) {
   const meta = findStudentMeta(ws);
   if (!meta || !meta.studentToken) {
-    safeSend(ws, { type: "error", message: "Nejdøív se pøipoj (join)" });
+    safeSend(ws, { type: "error", message: "Nejd˜˜v se p˜ipoj (join)" });
     return;
   }
   const text = String(msg.text || "").trim();
   if (!text) {
-    safeSend(ws, { type: "error", message: "Napiš dotaz" });
+    safeSend(ws, { type: "error", message: "Napi˜ dotaz" });
     return;
   }
   if (text.length > 1000) {
-    safeSend(ws, { type: "error", message: "Dotaz je pøíliš dlouhı" });
+    safeSend(ws, { type: "error", message: "Dotaz je p˜˜li˜ dlouh˜" });
     return;
   }
   const saved = createStudentQuestion(meta.sessionId, meta.studentToken, text);

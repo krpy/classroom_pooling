@@ -1,11 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LiveResultsChart from "./components/LiveResultsChart.jsx";
 
+const ADMIN_UI_STORAGE_KEY = "cp_admin_ui_password";
+
+function readAdminUiPassword() {
+  if (typeof window === "undefined") return "";
+  try {
+    return sessionStorage.getItem(ADMIN_UI_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function createSessionHeaders() {
+  const h = { "Content-Type": "application/json" };
+  const ui = readAdminUiPassword();
+  if (ui) h["X-Admin-UI-Password"] = ui;
+  return h;
+}
+
 function apiHeaders(adminToken) {
-  return {
+  const ui = readAdminUiPassword();
+  const h = {
     Authorization: `Bearer ${adminToken}`,
     "Content-Type": "application/json",
   };
+  if (ui) h["X-Admin-UI-Password"] = ui;
+  return h;
 }
 
 const BLANK_QUICK_SLOTS = [
@@ -44,10 +65,26 @@ export default function App() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportError, setExportError] = useState(null);
   const [exportCopied, setExportCopied] = useState(false);
+  const [adminUiBootstrapped, setAdminUiBootstrapped] = useState(false);
+  const [adminUiLocked, setAdminUiLocked] = useState(false);
+  const [gateUnlocked, setGateUnlocked] = useState(
+    () => typeof window !== "undefined" && !!sessionStorage.getItem(ADMIN_UI_STORAGE_KEY)
+  );
+  const [gatePassword, setGatePassword] = useState("");
+  const [gateError, setGateError] = useState("");
 
   const wsUrl = useMemo(() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}/ws`;
+  }, []);
+
+  const forceAdminRelogin = useCallback(() => {
+    try {
+      sessionStorage.removeItem(ADMIN_UI_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    window.location.reload();
   }, []);
 
   const loadSession = useCallback(
@@ -55,7 +92,14 @@ export default function App() {
       const res = await fetch(`/api/sessions/${sid}/present`, {
         headers: apiHeaders(token),
       });
-      if (!res.ok) throw new Error("Na\u010dten\u00ed relace selhalo");
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        if (res.status === 401 && errBody.adminUiLocked) {
+          forceAdminRelogin();
+          return;
+        }
+        throw new Error(errBody.error || "Na\u010dten\u00ed relace selhalo");
+      }
       const data = await res.json();
       setSession(data.session);
       setQuestions(data.questions);
@@ -75,20 +119,39 @@ export default function App() {
         setQr(await qrRes.json());
       }
     },
-    [selectedResultQuestionId]
+    [selectedResultQuestionId, forceAdminRelogin]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/config");
+        const j = await r.json().catch(() => ({}));
+        if (!cancelled) setAdminUiLocked(!!j.adminUiLocked);
+      } catch {
+        if (!cancelled) setAdminUiLocked(false);
+      } finally {
+        if (!cancelled) setAdminUiBootstrapped(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId || !adminToken) return undefined;
     const ws = new WebSocket(wsUrl);
     ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          type: "join_presenter",
-          sessionId,
-          adminToken,
-        })
-      );
+      const payload = {
+        type: "join_presenter",
+        sessionId,
+        adminToken,
+      };
+      const ui = readAdminUiPassword();
+      if (ui) payload.adminUiPassword = ui;
+      ws.send(JSON.stringify(payload));
     };
     ws.onmessage = (ev) => {
       try {
@@ -118,11 +181,42 @@ export default function App() {
     setExportCopied(false);
   }, [selectedResultQuestionId]);
 
+  const submitAdminGate = async () => {
+    setGateError("");
+    try {
+      const res = await fetch("/api/admin-ui/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: gatePassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGateError(data.error || "Neplatn\u00e9 heslo");
+        return;
+      }
+      sessionStorage.setItem(ADMIN_UI_STORAGE_KEY, gatePassword);
+      setGatePassword("");
+      setGateUnlocked(true);
+    } catch {
+      setGateError("Chyba p\u0159ipojen\u00ed");
+    }
+  };
+
   const createSession = async () => {
     setError(null);
     try {
-      const res = await fetch("/api/sessions", { method: "POST" });
-      if (!res.ok) throw new Error("Vytvo\u0159en\u00ed relace selhalo");
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: createSessionHeaders(),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        if (res.status === 401 && errBody.adminUiLocked) {
+          forceAdminRelogin();
+          return;
+        }
+        throw new Error(errBody.error || "Vytvo\u0159en\u00ed relace selhalo");
+      }
       const data = await res.json();
       setSessionId(data.sessionId);
       setAdminToken(data.adminToken);
@@ -339,10 +433,54 @@ export default function App() {
     }
   };
 
+  if (!adminUiBootstrapped) {
+    return (
+      <div style={styles.page}>
+        <p style={styles.muted}>{"Na\u010d\u00edt\u00e1m\u2026"}</p>
+      </div>
+    );
+  }
+
+  if (adminUiLocked && !gateUnlocked) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.gateCard}>
+          <h1 style={styles.h1}>{"Admin rozhran\u00ed"}</h1>
+          <p style={styles.muted}>
+            {
+              "Zadej heslo z prom\u011bnn\u00e9 prost\u0159ed\u00ed ADMIN_UI_PASSWORD na serveru (nap\u0159. Railway Variables)."
+            }
+          </p>
+          <input
+            type="password"
+            autoComplete="current-password"
+            style={styles.textIn}
+            value={gatePassword}
+            onChange={(e) => setGatePassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submitAdminGate();
+            }}
+          />
+          {gateError ? <p style={styles.err}>{gateError}</p> : null}
+          <div style={{ marginTop: 12 }}>
+            <button type="button" style={styles.primary} onClick={submitAdminGate}>
+              {"Pokra\u010dovat"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <h1 style={styles.h1}>{"T\u0159\u00eddn\u00ed anketa \u2013 lektor"}</h1>
+        {adminUiLocked && gateUnlocked ? (
+          <button type="button" style={styles.secondary} onClick={forceAdminRelogin}>
+            {"Odhl\u00e1sit admin heslo"}
+          </button>
+        ) : null}
         {!sessionId && (
           <button type="button" style={styles.primary} onClick={createSession}>
             {"Vytvo\u0159it relaci"}
@@ -867,5 +1005,13 @@ const styles = {
     maxHeight: 360,
     overflowY: "auto",
     border: "1px solid #e2e8f0",
+  },
+  gateCard: {
+    maxWidth: 420,
+    margin: "48px auto",
+    padding: 24,
+    borderRadius: 12,
+    border: "1px solid #e2e8f0",
+    background: "#f8fafc",
   },
 };
