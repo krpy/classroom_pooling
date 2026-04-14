@@ -34,8 +34,17 @@ export function setupWebSocket(server) {
     });
 
     ws.on("close", () => {
+      const closedStudentSessions = new Set();
       for (const [key, meta] of clients.entries()) {
-        if (meta.ws === ws) clients.delete(key);
+        if (meta.ws === ws) {
+          if (meta.role === "student") {
+            closedStudentSessions.add(meta.sessionId);
+          }
+          clients.delete(key);
+        }
+      }
+      for (const sessionId of closedStudentSessions) {
+        notifyPresenterProgress(sessionId);
       }
     });
   });
@@ -96,6 +105,7 @@ function handleJoinStudent(ws, msg) {
   } else {
     safeSend(ws, { type: "waiting" });
   }
+  notifyPresenterProgress(sessionId, active?.id ?? null);
 }
 
 function handleJoinPresenter(ws, msg) {
@@ -112,6 +122,7 @@ function handleJoinPresenter(ws, msg) {
   }
   clients.set(`p:${sessionId}:${randomUUID()}`, { ws, role: "presenter", sessionId });
   safeSend(ws, { type: "presenter_ready", sessionId });
+  notifyPresenterProgress(sessionId);
 }
 
 function findStudentMeta(ws) {
@@ -151,12 +162,13 @@ function handleSubmit(ws, msg) {
 
   upsertResponse(questionId, studentToken, value);
 
-  const rows = listResponsesForQuestion(questionId);
-  const results = computeResults(question, rows);
+  const results = computeResults(question, listResponsesForQuestion(questionId));
+  const progress = buildProgress(meta.sessionId, questionId);
   broadcastToPresenters(meta.sessionId, {
     type: "response_received",
     questionId,
     results,
+    progress,
   });
 }
 
@@ -207,12 +219,50 @@ function broadcastToPresenters(sessionId, payload) {
   }
 }
 
+function countConnectedStudents(sessionId) {
+  let count = 0;
+  for (const meta of clients.values()) {
+    if (meta.role === "student" && meta.sessionId === sessionId) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function buildProgress(sessionId, questionId = null) {
+  const activeQuestionId =
+    questionId ?? getActiveQuestionForSession(sessionId)?.id ?? null;
+  const connectedStudents = countConnectedStudents(sessionId);
+  if (!activeQuestionId) {
+    return {
+      questionId: null,
+      connectedStudents,
+      submittedCount: 0,
+      waitingCount: connectedStudents,
+    };
+  }
+  const submittedCount = listResponsesForQuestion(activeQuestionId).length;
+  return {
+    questionId: activeQuestionId,
+    connectedStudents,
+    submittedCount,
+    waitingCount: Math.max(0, connectedStudents - submittedCount),
+  };
+}
+
+export function notifyPresenterProgress(sessionId, questionId = null) {
+  broadcastToPresenters(sessionId, {
+    type: "progress_update",
+    progress: buildProgress(sessionId, questionId),
+  });
+}
+
 export function notifyPresenterResponse(sessionId, questionId, question) {
-  const rows = listResponsesForQuestion(questionId);
-  const results = computeResults(question, rows);
+  const results = computeResults(question, listResponsesForQuestion(questionId));
   broadcastToPresenters(sessionId, {
     type: "response_received",
     questionId,
     results,
+    progress: buildProgress(sessionId, questionId),
   });
 }

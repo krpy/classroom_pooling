@@ -17,6 +17,8 @@ export default function App() {
   const [qr, setQr] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [liveResults, setLiveResults] = useState(null);
+  const [selectedResultQuestionId, setSelectedResultQuestionId] = useState(null);
+  const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const wsRef = useRef(null);
 
@@ -37,6 +39,12 @@ export default function App() {
       const active = data.questions.find((q) => q.status === "active");
       setActiveId(active ? active.id : null);
       setLiveResults(active?.results || null);
+      if (data.questions.some((q) => q.id === selectedResultQuestionId)) {
+        // keep manual selection
+      } else {
+        const firstWithResults = data.questions.find((q) => q.results);
+        setSelectedResultQuestionId(firstWithResults?.id ?? active?.id ?? null);
+      }
       const qrRes = await fetch(`/api/sessions/${sid}/qr`, {
         headers: apiHeaders(token),
       });
@@ -45,7 +53,7 @@ export default function App() {
         setQr(qd);
       }
     },
-    []
+    [selectedResultQuestionId]
   );
 
   useEffect(() => {
@@ -66,6 +74,10 @@ export default function App() {
         const msg = JSON.parse(ev.data);
         if (msg.type === "response_received" && msg.results) {
           setLiveResults(msg.results);
+          if (msg.progress) setProgress(msg.progress);
+        }
+        if (msg.type === "progress_update" && msg.progress) {
+          setProgress(msg.progress);
         }
       } catch {
         /* ignore */
@@ -103,6 +115,7 @@ export default function App() {
       const data = await res.json();
       setActiveId(questionId);
       setLiveResults(data.results);
+      setSelectedResultQuestionId(questionId);
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -119,6 +132,7 @@ export default function App() {
       if (!res.ok) throw new Error("Uzavření selhalo");
       setActiveId(null);
       setLiveResults(null);
+      setProgress(null);
       await loadSession(sessionId, adminToken);
     } catch (e) {
       setError(e.message || "Chyba");
@@ -210,6 +224,19 @@ export default function App() {
                     </button>
                   )}
                 </div>
+                {(q.status === "active" || progress?.questionId === q.id) && (
+                  <div style={styles.progressBox}>
+                    <span style={styles.progressPill}>
+                      Odesláno: {progress?.questionId === q.id ? progress.submittedCount : 0}
+                    </span>
+                    <span style={styles.progressPill}>
+                      Čekáme na: {progress?.questionId === q.id ? progress.waitingCount : 0}
+                    </span>
+                    <span style={styles.progressPill}>
+                      Připojeno: {progress?.questionId === q.id ? progress.connectedStudents : 0}
+                    </span>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -219,6 +246,33 @@ export default function App() {
         <section style={styles.card}>
           <h2 style={styles.h2}>Živé výsledky</h2>
           <LiveResultsChart results={liveResults} />
+        </section>
+      )}
+      {questions.length > 0 && (
+        <section style={styles.card}>
+          <h2 style={styles.h2}>Výsledky otázek</h2>
+          <div style={styles.resultTabs}>
+            {questions.map((q) => (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => setSelectedResultQuestionId(q.id)}
+                style={{
+                  ...styles.tabBtn,
+                  ...(selectedResultQuestionId === q.id ? styles.tabBtnActive : {}),
+                }}
+              >
+                Otázka {q.order_index + 1}
+              </button>
+            ))}
+          </div>
+          {questions.find((q) => q.id === selectedResultQuestionId)?.results ? (
+            <LiveResultsChart
+              results={questions.find((q) => q.id === selectedResultQuestionId)?.results}
+            />
+          ) : (
+            <p style={styles.muted}>Pro vybranou otázku zatím nejsou odpovědi.</p>
+          )}
         </section>
       )}
       {session && (
@@ -292,6 +346,28 @@ const styles = {
   },
   qText: { marginTop: 8, color: "#334155", fontSize: 15 },
   row: { display: "flex", gap: 8, flexWrap: "wrap" },
+  progressBox: { display: "flex", gap: 8, flexWrap: "wrap" },
+  progressPill: {
+    fontSize: 13,
+    background: "#e2e8f0",
+    color: "#1e293b",
+    borderRadius: 999,
+    padding: "4px 10px",
+    fontWeight: 600,
+  },
+  resultTabs: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 },
+  tabBtn: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #cbd5e1",
+    background: "#fff",
+    cursor: "pointer",
+  },
+  tabBtnActive: {
+    borderColor: "#2563eb",
+    color: "#1d4ed8",
+    background: "#eff6ff",
+  },
   muted: { color: "#64748b", fontSize: 14 },
   err: { color: "#b91c1c" },
 };

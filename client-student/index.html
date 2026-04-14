@@ -150,6 +150,25 @@
         touch-action: none;
         user-select: none;
       }
+      .rank-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+      .rank-controls {
+        display: flex;
+        gap: 6px;
+      }
+      .rank-controls button {
+        width: auto;
+        margin: 0;
+        font-size: 0.9rem;
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: #1e293b;
+        color: #e2e8f0;
+      }
       #rankList li.sortable-ghost {
         opacity: 0.45;
       }
@@ -220,16 +239,31 @@
     <script>
       (function () {
         const TOKEN_KEY = "cp_student_token";
+        const PIN_KEY = "cp_last_pin";
+        function makeUuidFallback() {
+          const tpl = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+          return tpl.replace(/[xy]/g, function (c) {
+            const r = (Math.random() * 16) | 0;
+            const v = c === "x" ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+          });
+        }
         function studentToken() {
           let t = localStorage.getItem(TOKEN_KEY);
           if (!t) {
-            t = crypto.randomUUID();
+            t =
+              window.crypto && typeof window.crypto.randomUUID === "function"
+                ? window.crypto.randomUUID()
+                : makeUuidFallback();
             localStorage.setItem(TOKEN_KEY, t);
           }
           return t;
         }
         const params = new URLSearchParams(location.search);
-        const initialPin = (params.get("pin") || "").replace(/\D/g, "").slice(0, 4);
+        const initialPin =
+          (params.get("pin") || localStorage.getItem(PIN_KEY) || "")
+            .replace(/\D/g, "")
+            .slice(0, 4);
 
         const el = {
           pin: document.getElementById("pinInput"),
@@ -248,6 +282,8 @@
         let joined = false;
         let currentQuestion = null;
         let sortable = null;
+        let lastPin = initialPin;
+        let reconnectTimer = null;
 
         function showBanner(text, kind) {
           if (!text) {
@@ -272,6 +308,12 @@
         }
 
         function connect(pin) {
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          lastPin = pin;
+          localStorage.setItem(PIN_KEY, pin);
           if (ws) ws.close();
           ws = new WebSocket(wsUrl());
           ws.onopen = function () {
@@ -284,7 +326,13 @@
             );
           };
           ws.onmessage = function (ev) {
-            var msg = JSON.parse(ev.data);
+            var msg;
+            try {
+              msg = JSON.parse(ev.data);
+            } catch (_e) {
+              showBanner("Neplatná odpověď serveru.", "err");
+              return;
+            }
             if (msg.type === "error") {
               showBanner(msg.message || "Chyba", "err");
               joined = false;
@@ -316,8 +364,25 @@
             }
           };
           ws.onclose = function () {
+            if (joined && lastPin) {
+              showBanner("Spojení přerušeno, obnovuji…", "err");
+              reconnectTimer = setTimeout(function () {
+                connect(lastPin);
+              }, 1000);
+              return;
+            }
             joined = false;
           };
+        }
+
+        function safeWsSend(payload) {
+          if (!ws || ws.readyState !== 1) {
+            showBanner("Spojení není aktivní. Zkus to znovu.", "err");
+            setScreens("wait");
+            return false;
+          }
+          ws.send(JSON.stringify(payload));
+          return true;
         }
 
         function destroySortable() {
@@ -379,15 +444,16 @@
               var p = inputs.map(function (i) {
                 return Number(i.value) || 0;
               });
-              ws.send(
-                JSON.stringify({
+              if (
+                safeWsSend({
                   type: "submit",
                   questionId: q.id,
                   studentToken: studentToken(),
                   value: { percentages: p },
                 })
-              );
-              setScreens("sent");
+              ) {
+                setScreens("sent");
+              }
             });
             el.screenQ.appendChild(btn);
             recalc();
@@ -400,33 +466,78 @@
             ul.id = "rankList";
             items.forEach(function (text, idx) {
               var li = document.createElement("li");
-              li.textContent = text;
               li.dataset.id = String(idx);
+              var line = document.createElement("div");
+              line.className = "rank-line";
+              var label = document.createElement("span");
+              label.textContent = text;
+              line.appendChild(label);
+              li.appendChild(line);
               ul.appendChild(li);
             });
             el.screenQ.appendChild(ul);
-            sortable = Sortable.create(ul, {
-              animation: 150,
-              handle: "li",
-            });
+            if (window.Sortable && typeof window.Sortable.create === "function") {
+              sortable = window.Sortable.create(ul, {
+                animation: 150,
+                handle: "li",
+              });
+            }
+            if (!sortable) {
+              Array.from(ul.children).forEach(function (item) {
+                var controls = document.createElement("div");
+                controls.className = "rank-controls";
+                var up = document.createElement("button");
+                up.type = "button";
+                up.textContent = "Nahoru";
+                var down = document.createElement("button");
+                down.type = "button";
+                down.textContent = "Dolů";
+                up.addEventListener("click", function () {
+                  var prev = item.previousElementSibling;
+                  if (prev) ul.insertBefore(item, prev);
+                });
+                down.addEventListener("click", function () {
+                  var next = item.nextElementSibling;
+                  if (next) ul.insertBefore(next, item);
+                });
+                controls.appendChild(up);
+                controls.appendChild(down);
+                item.firstChild.appendChild(controls);
+              });
+            }
             var btn2 = document.createElement("button");
             btn2.type = "button";
             btn2.textContent = "Odeslat pořadí";
             btn2.addEventListener("click", function () {
-              var order = sortable.toArray().map(function (x) {
-                return Number(x);
-              });
-              ws.send(
-                JSON.stringify({
+              var order;
+              if (sortable) {
+                order = sortable.toArray().map(function (x) {
+                  return Number(x);
+                });
+              } else {
+                order = Array.from(ul.children).map(function (node) {
+                  return Number(node.dataset.id);
+                });
+              }
+              if (
+                safeWsSend({
                   type: "submit",
                   questionId: q.id,
                   studentToken: studentToken(),
                   value: { order: order },
                 })
-              );
-              setScreens("sent");
+              ) {
+                setScreens("sent");
+              }
             });
             el.screenQ.appendChild(btn2);
+            if (!sortable) {
+              var hint = document.createElement("p");
+              hint.className = "muted";
+              hint.textContent =
+                "V Safari může být blokovaná knihovna pro drag&drop. Použij tlačítka Nahoru / Dolů.";
+              el.screenQ.appendChild(hint);
+            }
             return;
           }
 
@@ -459,15 +570,16 @@
             btn3.addEventListener("click", function () {
               var sel = fieldset.querySelector('input[name="mc"]:checked');
               var choice = sel ? Number(sel.value) : 0;
-              ws.send(
-                JSON.stringify({
+              if (
+                safeWsSend({
                   type: "submit",
                   questionId: q.id,
                   studentToken: studentToken(),
                   value: { choice: choice },
                 })
-              );
-              setScreens("sent");
+              ) {
+                setScreens("sent");
+              }
             });
             el.screenQ.appendChild(btn3);
           }
@@ -548,6 +660,11 @@
           showBanner("Připojuji…", "ok");
           connect(pin);
         });
+
+        if (initialPin.length === 4) {
+          showBanner("Obnovuji připojení…", "ok");
+          connect(initialPin);
+        }
       })();
     </script>
   </body>

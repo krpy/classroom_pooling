@@ -15,6 +15,7 @@ import {
   broadcastQuestionClosed,
   broadcastShowResults,
   broadcastWaiting,
+  notifyPresenterProgress,
   notifyPresenterResponse,
 } from "./websocket.js";
 
@@ -90,6 +91,7 @@ export function createRouter() {
       const rows = listResponsesForQuestion(questionId);
       const results = computeResults(q, rows);
       notifyPresenterResponse(sessionId, questionId, q);
+      notifyPresenterProgress(sessionId, questionId);
       res.json({ ok: true, question: q, results });
     }
   );
@@ -107,6 +109,7 @@ export function createRouter() {
       }
       broadcastQuestionClosed(sessionId);
       broadcastWaiting(sessionId);
+      notifyPresenterProgress(sessionId, null);
       res.json({ ok: true });
     }
   );

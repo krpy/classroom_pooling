@@ -43,29 +43,49 @@ export default function LiveResultsChart({ results }) {
   }
 
   if (results.kind === "ranking") {
-    const data = results.items.map((row) => ({
-      name: row.label.length > 28 ? `${row.label.slice(0, 26)}…` : row.label,
-      hodnocení: row.avgRank,
-    }));
+    const data = [...results.items].sort((a, b) => a.avgRank - b.avgRank);
+    const scaleMax = Math.max(...data.map((x) => x.avgRank), 1);
     return (
-      <div style={{ width: "100%", height: 360 }}>
-        <p style={{ marginTop: 0, color: "#64748b", fontSize: 14 }}>
+      <div style={{ width: "100%" }}>
+        <p style={{ marginTop: 0, color: "#64748b", fontSize: 14, marginBottom: 14 }}>
           Nižší číslo = důležitější (průměrné pořadí).
         </p>
-        <ResponsiveContainer>
-          <BarChart
-            layout="vertical"
-            data={data}
-            margin={{ top: 8, right: 24, left: 120, bottom: 8 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" domain={[1, "auto"]} />
-            <YAxis type="category" dataKey="name" width={110} />
-            <Tooltip formatter={(v) => [v, "Prům. pořadí"]} />
-            <Legend />
-            <Bar dataKey="hodnocení" name="Prům. pořadí" fill="#7c3aed" />
-          </BarChart>
-        </ResponsiveContainer>
+        <div style={{ display: "grid", gap: 12 }}>
+          {data.map((row, index) => (
+            <div key={row.label} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 6,
+                  fontWeight: 600,
+                }}
+              >
+                <span>
+                  {index + 1}. {row.label}
+                </span>
+                <span style={{ color: "#6d28d9" }}>Průměr: {row.avgRank}</span>
+              </div>
+              <div
+                style={{
+                  height: 12,
+                  borderRadius: 999,
+                  background: "#ede9fe",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${Math.max(8, (row.avgRank / scaleMax) * 100)}%`,
+                    background: "linear-gradient(90deg, #a78bfa, #7c3aed)",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
         <p style={{ color: "#64748b", fontSize: 14 }}>
           Počet odpovědí: {results.responseCount}
         </p>
