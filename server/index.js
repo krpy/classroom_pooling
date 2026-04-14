@@ -19,10 +19,12 @@ if (getAdminUiPassword()) {
 }
 
 const app = express();
-app.use(createRouter());
-
+// Admin UI static files must run before the API router: the router applies
+// requireAdminUiPassword to all /api traffic and would block GET /admin/ with 401.
 const presenterDist = path.join(rootDir, "client-presenter", "dist");
 app.use("/admin", express.static(presenterDist, { index: "index.html" }));
+
+app.use(createRouter());
 
 app.get("/", (_req, res) => {
   res.sendFile(path.join(rootDir, "client-student", "index.html"));
